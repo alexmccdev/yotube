@@ -5,9 +5,11 @@ import { useState } from "react";
 export default function CoverImageField({
   coverImageUrl,
   onChange,
+  editable = true,
 }: {
   coverImageUrl?: string;
   onChange: (url: string) => void;
+  editable?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(coverImageUrl ?? "");
@@ -17,7 +19,7 @@ export default function CoverImageField({
     if (value.trim() && value.trim() !== coverImageUrl) onChange(value.trim());
   };
 
-  if (editing) {
+  if (editing && editable) {
     return (
       <input
         autoFocus
@@ -36,9 +38,10 @@ export default function CoverImageField({
   return (
     <button
       type="button"
-      onClick={() => setEditing(true)}
-      title="Click to change cover image"
-      className="w-16 h-[88px] shrink-0 rounded-sm border border-ink-text/15 bg-ink-text/5 overflow-hidden hover:border-brass transition-colors flex items-center justify-center"
+      onClick={() => editable && setEditing(true)}
+      disabled={!editable}
+      title={editable ? "Click to change cover image" : undefined}
+      className="w-16 h-[88px] shrink-0 rounded-sm border border-ink-text/15 bg-ink-text/5 overflow-hidden hover:border-brass transition-colors disabled:hover:border-ink-text/15 flex items-center justify-center"
     >
       {coverImageUrl ? (
         <img src={coverImageUrl} alt="" className="w-full h-full object-cover" />

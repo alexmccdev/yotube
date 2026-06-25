@@ -162,27 +162,52 @@ async function processTrack(cardId: string, trackId: string): Promise<void> {
   });
 }
 
-export async function addTrack(cardId: string, url: string): Promise<Track | undefined> {
+/** A staged (finalized) card is locked — unstage it (or unlink from Yoto, which unstages too) to edit. */
+export function isLocked(card: Card): boolean {
+  return card.finalized;
+}
+
+export async function addTrack(cardId: string, url: string, titleHint?: string): Promise<Track | undefined> {
   const card = await getCard(cardId);
-  if (!card) return undefined;
+  if (!card || isLocked(card)) return undefined;
   const track: Track = {
     id: randomUUID(),
     url,
-    title: url,
+    title: titleHint || url,
     status: "queued",
   };
   card.tracks.push(track);
   await persist(card);
+  if (titleHint) void assignIconForTrack(cardId, track.id, titleHint);
   void processTrack(cardId, track.id);
   return track;
+}
+
+export async function removeTrack(cardId: string, trackId: string): Promise<boolean> {
+  const card = await getCard(cardId);
+  const track = card?.tracks.find((t) => t.id === trackId);
+  if (!card || !track || isLocked(card)) return false;
+  card.tracks = card.tracks.filter((t) => t.id !== trackId);
+  await persist(card);
+  await fs.rm(`${rawAudioPath(cardId, trackId)}.m4a`, { force: true });
+  if (track.filePath) await fs.rm(track.filePath, { force: true });
+  return true;
 }
 
 export async function retryTrack(cardId: string, trackId: string): Promise<boolean> {
   const card = await getCard(cardId);
   const track = card?.tracks.find((t) => t.id === trackId);
-  if (!card || !track) return false;
+  if (!card || !track || isLocked(card)) return false;
   await updateTrack(cardId, trackId, { status: "queued", error: undefined });
   void processTrack(cardId, trackId);
+  return true;
+}
+
+export async function renameCard(cardId: string, title: string): Promise<boolean> {
+  const card = await getCard(cardId);
+  if (!card || isLocked(card)) return false;
+  card.title = title;
+  await persist(card);
   return true;
 }
 
@@ -192,15 +217,14 @@ export async function renameTrack(
   title: string,
 ): Promise<boolean> {
   const card = await getCard(cardId);
-  if (!card || !card.tracks.some((t) => t.id === trackId)) return false;
-  if (card.finalized) return false;
+  if (!card || !card.tracks.some((t) => t.id === trackId) || isLocked(card)) return false;
   await updateTrack(cardId, trackId, { title });
   return true;
 }
 
 export async function reorderTracks(cardId: string, trackIds: string[]): Promise<boolean> {
   const card = await getCard(cardId);
-  if (!card) return false;
+  if (!card || isLocked(card)) return false;
   if (
     trackIds.length !== card.tracks.length ||
     !trackIds.every((id) => card.tracks.some((t) => t.id === id))
@@ -213,17 +237,31 @@ export async function reorderTracks(cardId: string, trackIds: string[]): Promise
   return true;
 }
 
+/** Reverts a staged card to a draft: unlocks editing and puts tagged tracks back to "ready". */
+export async function unstageCard(cardId: string): Promise<boolean> {
+  const card = await getCard(cardId);
+  if (!card || !card.finalized) return false;
+  card.finalized = false;
+  card.tracks = card.tracks.map((t) => (t.status === "done" ? { ...t, status: "ready" } : t));
+  await persist(card);
+  return true;
+}
+
 export async function finalizeCard(
   cardId: string,
 ): Promise<{ ok: true; outputDir: string } | { ok: false; error: string }> {
   const card = await getCard(cardId);
   if (!card) return { ok: false, error: "Card not found" };
+  if (card.finalized) return { ok: false, error: "Card is already staged" };
   if (card.tracks.length === 0) return { ok: false, error: "Card has no tracks" };
   if (card.tracks.some((t) => t.status !== "ready")) {
-    return { ok: false, error: "All tracks must finish downloading before finalizing" };
+    return { ok: false, error: "All tracks must finish downloading before staging" };
   }
 
   const outputDir = path.join(CARDS_DIR, sanitizeFilename(card.title));
+  if (card.outputDir && card.outputDir !== outputDir) {
+    await fs.rm(card.outputDir, { recursive: true, force: true });
+  }
   await fs.mkdir(outputDir, { recursive: true });
 
   for (let i = 0; i < card.tracks.length; i++) {
@@ -254,14 +292,15 @@ export async function finalizeCard(
     await persist(fresh);
   }
 
-  await cleanupWorkAudio(cardId);
-
   void autoAssignIconsAndCover(cardId);
 
   return { ok: true, outputDir };
 }
 
 async function assignIconForTrack(cardId: string, trackId: string, title: string): Promise<void> {
+  const card = await getCard(cardId);
+  const track = card?.tracks.find((t) => t.id === trackId);
+  if (!track || track.iconUrl) return;
   const icon = await pickIcon(title);
   if (icon) await setTrackIcon(cardId, trackId, icon);
 }
@@ -350,20 +389,13 @@ export async function setPushError(cardId: string, error: string): Promise<void>
   await persist(card);
 }
 
+/** Unlinking also unstages the card, since the Yoto card it was linked to no longer reflects any edits. */
 export async function clearYotoCardId(cardId: string): Promise<boolean> {
   const card = await getCard(cardId);
   if (!card) return false;
   delete card.yotoCardId;
+  card.finalized = false;
+  card.tracks = card.tracks.map((t) => (t.status === "done" ? { ...t, status: "ready" } : t));
   await persist(card);
   return true;
-}
-
-async function cleanupWorkAudio(cardId: string): Promise<void> {
-  const dir = cardDir(cardId);
-  const entries = await fs.readdir(dir).catch(() => []);
-  await Promise.all(
-    entries
-      .filter((name) => name !== "state.json")
-      .map((name) => fs.rm(path.join(dir, name), { force: true })),
-  );
 }

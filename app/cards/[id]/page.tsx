@@ -11,6 +11,7 @@ import TrackTitleField from "@/app/components/TrackTitleField";
 import { catalogNumber, formatDuration } from "@/lib/format";
 import { getCardStages } from "@/lib/stage";
 import { type TrackStatus } from "@/lib/track-status";
+import { extractVideoId } from "@/lib/validate";
 
 interface Track {
   id: string;
@@ -41,9 +42,16 @@ export default function CardStatusPage() {
   const [card, setCard] = useState<Card | null>(null);
   const [finalizing, setFinalizing] = useState(false);
   const [finalizeError, setFinalizeError] = useState<string | null>(null);
+  const [unstaging, setUnstaging] = useState(false);
   const [yotoConnected, setYotoConnected] = useState<boolean | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState("");
+  const [newTrackUrl, setNewTrackUrl] = useState("");
+  const [addingTrack, setAddingTrack] = useState(false);
   const dragIndex = useRef<number | null>(null);
+  const cardRef = useRef<Card | null>(null);
+  cardRef.current = card;
 
   useEffect(() => {
     fetch("/api/yoto/status")
@@ -66,6 +74,22 @@ export default function CardStatusPage() {
     };
   }, [cardId]);
 
+  useEffect(() => {
+    const isBlank = (c: Card) =>
+      c.tracks.length === 0 && !c.finalized && !c.coverImageUrl && c.title.trim() === "Untitled card";
+    const cleanupIfBlank = () => {
+      const c = cardRef.current;
+      if (c && isBlank(c)) {
+        fetch(`/api/cards/${c.id}`, { method: "DELETE", keepalive: true });
+      }
+    };
+    window.addEventListener("pagehide", cleanupIfBlank);
+    return () => {
+      window.removeEventListener("pagehide", cleanupIfBlank);
+      cleanupIfBlank();
+    };
+  }, []);
+
   if (!card) {
     return (
       <main className="mx-auto max-w-2xl w-full p-6 sm:p-10 flex flex-col gap-6">
@@ -80,11 +104,67 @@ export default function CardStatusPage() {
     );
   }
 
+  const locked = card.finalized;
   const allReady = card.tracks.length > 0 && card.tracks.every((t) => t.status === "ready");
   const notReadyCount = card.tracks.filter((t) => t.status !== "ready").length;
   const totalDuration = card.tracks.reduce((sum, t) => sum + (t.duration ?? 0), 0);
   const hasAnyDuration = card.tracks.some((t) => t.duration !== undefined);
   const stages = getCardStages(card);
+
+  const commitCardTitle = async () => {
+    setEditingTitle(false);
+    const title = titleDraft.trim() || "Untitled card";
+    if (title === card.title) return;
+    setCard((prev) => (prev ? { ...prev, title } : prev));
+    await fetch(`/api/cards/${cardId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title }),
+    });
+  };
+
+  const addTrackUrl = async (url: string) => {
+    const res = await fetch(`/api/cards/${cardId}/tracks`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+    });
+    if (res.ok) {
+      const track = await res.json();
+      setCard((prev) => (prev ? { ...prev, tracks: [...prev.tracks, track] } : prev));
+    }
+  };
+
+  const addTrack = async () => {
+    const url = newTrackUrl.trim();
+    if (!url) return;
+    setAddingTrack(true);
+    await addTrackUrl(url);
+    setNewTrackUrl("");
+    setAddingTrack(false);
+  };
+
+  /** Pasting a block of several links adds them all at once instead of just the first. */
+  const handleAddTrackPaste = async (e: React.ClipboardEvent<HTMLInputElement>) => {
+    const pasted = e.clipboardData.getData("text");
+    const candidates = pasted.split(/[\n,]+/).map((s) => s.trim()).filter(Boolean);
+    const ids = candidates.map(extractVideoId).filter((id): id is string => Boolean(id));
+    if (ids.length < 2) return;
+    e.preventDefault();
+    setAddingTrack(true);
+    for (const id of ids) {
+      await addTrackUrl(`https://www.youtube.com/watch?v=${id}`);
+    }
+    setNewTrackUrl("");
+    setAddingTrack(false);
+  };
+
+  const removeTrack = async (trackId: string) => {
+    setCard((prev) =>
+      prev ? { ...prev, tracks: prev.tracks.filter((t) => t.id !== trackId) } : prev,
+    );
+    await fetch(`/api/cards/${cardId}/tracks/${trackId}`, { method: "DELETE" });
+  };
 
   const renameTrack = async (trackId: string, title: string) => {
     setCard((prev) =>
@@ -158,7 +238,7 @@ export default function CardStatusPage() {
     const res = await fetch(`/api/cards/${cardId}/finalize`, { method: "POST" });
     const body = await res.json();
     if (!res.ok) {
-      setFinalizeError(body.error ?? "Failed to finalize");
+      setFinalizeError(body.error ?? "Failed to stage card");
       setFinalizing(false);
       return;
     }
@@ -183,7 +263,31 @@ export default function CardStatusPage() {
 
   const unlinkYoto = async () => {
     await fetch(`/api/cards/${cardId}/push-to-yoto`, { method: "DELETE" });
-    setCard((prev) => (prev ? { ...prev, yotoCardId: undefined } : prev));
+    setCard((prev) =>
+      prev
+        ? {
+            ...prev,
+            yotoCardId: undefined,
+            finalized: false,
+            tracks: prev.tracks.map((t) => (t.status === "done" ? { ...t, status: "ready" } : t)),
+          }
+        : prev,
+    );
+  };
+
+  const unstage = async () => {
+    setUnstaging(true);
+    await fetch(`/api/cards/${cardId}/unstage`, { method: "POST" });
+    setCard((prev) =>
+      prev
+        ? {
+            ...prev,
+            finalized: false,
+            tracks: prev.tracks.map((t) => (t.status === "done" ? { ...t, status: "ready" } : t)),
+          }
+        : prev,
+    );
+    setUnstaging(false);
   };
 
   const deleteCard = async () => {
@@ -216,12 +320,43 @@ export default function CardStatusPage() {
         <div className="border-l-4 border-brass px-6 sm:px-8 pt-6 pb-7 flex flex-col gap-6">
           <div className="flex flex-col gap-4">
             <div className="flex items-start gap-4">
-              <CoverImageField coverImageUrl={card.coverImageUrl} onChange={setCoverImage} />
+              <CoverImageField
+                coverImageUrl={card.coverImageUrl}
+                onChange={setCoverImage}
+                editable={!locked}
+              />
               <div className="flex flex-col gap-1 min-w-0">
                 <div className="font-mono text-[11px] uppercase tracking-wider text-ink-text/40">
                   No. {catalogNumber(card.id)}
                 </div>
-                <h1 className="font-display text-3xl font-semibold leading-tight">{card.title}</h1>
+                {!locked && editingTitle ? (
+                  <input
+                    autoFocus
+                    className="font-display text-3xl font-semibold leading-tight border-b border-brass outline-none bg-transparent placeholder:text-ink-text/30"
+                    placeholder="Untitled card"
+                    value={titleDraft}
+                    onChange={(e) => setTitleDraft(e.target.value)}
+                    onBlur={commitCardTitle}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") commitCardTitle();
+                    }}
+                  />
+                ) : (
+                  <h1>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTitleDraft(card.title);
+                        setEditingTitle(true);
+                      }}
+                      disabled={locked}
+                      title={locked ? undefined : "Click to rename"}
+                      className="font-display text-3xl font-semibold leading-tight text-left border-b border-transparent hover:border-ink-text/20 transition-colors disabled:cursor-default disabled:hover:border-transparent"
+                    >
+                      {card.title}
+                    </button>
+                  </h1>
+                )}
                 <div className="font-mono text-xs text-ink-text/50 tabular-nums">
                   {card.tracks.length} track{card.tracks.length === 1 ? "" : "s"}
                   {hasAnyDuration && ` · ${formatDuration(totalDuration)} total`}
@@ -235,11 +370,11 @@ export default function CardStatusPage() {
             {card.tracks.map((track, index) => (
               <li
                 key={track.id}
-                draggable
+                draggable={!locked}
                 onDragStart={() => (dragIndex.current = index)}
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={() => onDrop(index)}
-                className="py-2.5 flex flex-col gap-1 cursor-move"
+                className={`py-2.5 flex flex-col gap-1 ${locked ? "" : "cursor-move"}`}
               >
                 <div className="flex items-center gap-3">
                   <span className="font-mono text-xs text-ink-text/40 w-10 shrink-0 tabular-nums">
@@ -248,12 +383,24 @@ export default function CardStatusPage() {
                   <TrackIcon
                     iconUrl={track.iconUrl}
                     onRegenerate={(keyword) => regenerateIcon(track.id, keyword)}
+                    editable={!locked}
                   />
                   <TrackTitleField
                     title={track.title}
                     onRename={(title) => renameTrack(track.id, title)}
-                    editable={!card.finalized}
+                    editable={!locked}
                   />
+                  {!locked && (
+                    <button
+                      type="button"
+                      aria-label="Remove track"
+                      title="Remove track"
+                      className="font-mono text-xs text-ink-text/30 hover:text-red-700 transition-colors px-1 shrink-0"
+                      onClick={() => removeTrack(track.id)}
+                    >
+                      ✕
+                    </button>
+                  )}
                 </div>
                 <div className="flex items-center gap-3 pl-[3.25rem]">
                   {track.duration !== undefined && (
@@ -284,6 +431,36 @@ export default function CardStatusPage() {
               </li>
             ))}
           </ul>
+
+          {!locked && (
+            <div className="flex flex-col gap-1.5">
+              {card.tracks.length === 0 && (
+                <p className="text-sm text-ink-text/50">
+                  Paste a YouTube link or video ID — drop in several at once, one per line.
+                </p>
+              )}
+              <div className="flex items-center gap-2">
+                <input
+                  className="flex-1 border-b border-ink-text/15 focus:border-brass outline-none bg-transparent py-1 placeholder:text-ink-text/30 transition-colors"
+                  placeholder="youtube.com/watch?v=... or jNQXAC9IVRw"
+                  value={newTrackUrl}
+                  onChange={(e) => setNewTrackUrl(e.target.value)}
+                  onPaste={handleAddTrackPaste}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") addTrack();
+                  }}
+                />
+                <button
+                  type="button"
+                  disabled={addingTrack || !newTrackUrl.trim()}
+                  onClick={addTrack}
+                  className="font-mono text-xs uppercase tracking-wider text-ink-text/60 hover:text-brass transition-colors disabled:opacity-50 shrink-0"
+                >
+                  {addingTrack ? "Adding…" : "+ Add"}
+                </button>
+              </div>
+            </div>
+          )}
 
           {finalizeError && <p className="text-sm text-red-700">{finalizeError}</p>}
 
@@ -324,6 +501,14 @@ export default function CardStatusPage() {
                       ? "Connect your Yoto account from the home page first."
                       : "Uploads the finished tracks and creates the card in your Yoto library."}
                   </p>
+                  <button
+                    type="button"
+                    disabled={unstaging}
+                    onClick={unstage}
+                    className="self-start mt-2 font-mono text-xs uppercase tracking-wider text-ink-text/40 hover:text-brass transition-colors disabled:opacity-50"
+                  >
+                    {unstaging ? "Unstaging…" : "Unstage to edit"}
+                  </button>
                 </div>
               )}
             </div>
@@ -335,11 +520,11 @@ export default function CardStatusPage() {
                 onClick={finalize}
                 className="self-start bg-ink text-paper font-mono text-sm uppercase tracking-wider px-5 py-2.5 rounded-sm hover:bg-brass hover:text-ink-text transition-colors disabled:opacity-50"
               >
-                {finalizing ? "Finalizing…" : "Finalize card"}
+                {finalizing ? "Staging…" : "Stage card"}
               </button>
               <p className="font-mono text-[11px] text-ink-text/40">
                 {card.tracks.length === 0
-                  ? "Add at least one track before finalizing."
+                  ? "Add at least one track before staging."
                   : notReadyCount > 0
                     ? `Waiting on ${notReadyCount} track${notReadyCount === 1 ? "" : "s"} to finish downloading.`
                     : "Tags every track and packages it for Yoto."}

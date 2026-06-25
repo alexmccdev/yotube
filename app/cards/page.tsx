@@ -9,6 +9,7 @@ import { getStatusLine } from "@/lib/stage";
 
 interface Track {
   id: string;
+  title?: string;
   status: string;
   duration?: number;
 }
@@ -46,8 +47,21 @@ function StatusLine({ card }: { card: Card }) {
   );
 }
 
+type SortOption = "created-desc" | "created-asc" | "alpha";
+type StepFilter = "all" | "editing" | "staged" | "on-yoto";
+
+/** Where a card currently sits in the Created → Editing → Staged → On Yoto pipeline. */
+function currentStep(card: Card): Exclude<StepFilter, "all"> {
+  if (card.yotoCardId) return "on-yoto";
+  if (card.finalized) return "staged";
+  return "editing";
+}
+
 export default function CardsListPage() {
   const [cards, setCards] = useState<Card[] | null>(null);
+  const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<SortOption>("created-desc");
+  const [step, setStep] = useState<StepFilter>("all");
 
   useEffect(() => {
     let cancelled = false;
@@ -69,6 +83,20 @@ export default function CardsListPage() {
     await fetch(`/api/cards/${card.id}`, { method: "DELETE" });
   };
 
+  const normalizedQuery = query.trim().toLowerCase();
+  const filteredCards = (cards ?? [])
+    .filter((card) => step === "all" || currentStep(card) === step)
+    .filter((card) => {
+      if (!normalizedQuery) return true;
+      if (card.title.toLowerCase().includes(normalizedQuery)) return true;
+      return card.tracks.some((track) => track.title?.toLowerCase().includes(normalizedQuery));
+    })
+    .sort((a, b) => {
+      if (sort === "alpha") return a.title.localeCompare(b.title);
+      const diff = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      return sort === "created-asc" ? diff : -diff;
+    });
+
   return (
     <main className="mx-auto max-w-2xl w-full p-6 sm:p-10 flex flex-col gap-6">
       <div className="flex items-center justify-between">
@@ -84,6 +112,37 @@ export default function CardsListPage() {
         </div>
       </div>
 
+      {cards !== null && cards.length > 0 && (
+        <div className="flex items-center gap-4">
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search title or tracks…"
+            className="flex-1 font-mono text-sm bg-transparent text-paper placeholder:text-paper/30 border-b border-paper/20 focus:border-brass outline-none py-1.5 transition-colors"
+          />
+          <select
+            value={step}
+            onChange={(e) => setStep(e.target.value as StepFilter)}
+            className="font-mono text-xs uppercase tracking-wider bg-transparent text-paper/70 border-b border-paper/20 focus:border-brass outline-none py-1.5 transition-colors shrink-0"
+          >
+            <option className="bg-ink" value="all">Any step</option>
+            <option className="bg-ink" value="editing">Editing</option>
+            <option className="bg-ink" value="staged">Staged</option>
+            <option className="bg-ink" value="on-yoto">On Yoto</option>
+          </select>
+          <select
+            value={sort}
+            onChange={(e) => setSort(e.target.value as SortOption)}
+            className="font-mono text-xs uppercase tracking-wider bg-transparent text-paper/70 border-b border-paper/20 focus:border-brass outline-none py-1.5 transition-colors shrink-0"
+          >
+            <option className="bg-ink" value="created-desc">Newest first</option>
+            <option className="bg-ink" value="created-asc">Oldest first</option>
+            <option className="bg-ink" value="alpha">A–Z</option>
+          </select>
+        </div>
+      )}
+
       {cards === null && (
         <p className="font-mono text-sm text-paper/50">Loading…</p>
       )}
@@ -92,9 +151,14 @@ export default function CardsListPage() {
           No cards yet — create one to get started.
         </p>
       )}
+      {cards && cards.length > 0 && filteredCards.length === 0 && (
+        <p className="font-mono text-sm text-paper/50">
+          {normalizedQuery ? `No cards match “${query}”.` : "No cards at this step."}
+        </p>
+      )}
 
       <ul className="flex flex-col gap-3">
-        {cards?.map((card) => (
+        {filteredCards.map((card) => (
           <li
             key={card.id}
             className="bg-paper text-ink-text rounded-sm shadow-lg shadow-black/20 border-l-4 border-brass overflow-hidden"

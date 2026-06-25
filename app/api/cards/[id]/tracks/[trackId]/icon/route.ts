@@ -1,4 +1,4 @@
-import { getCard, setTrackIcon } from "@/lib/jobs";
+import { getCard, isLocked, setTrackIcon } from "@/lib/jobs";
 import { pickIcon } from "@/lib/yoto-icons";
 
 export async function POST(
@@ -9,6 +9,9 @@ export async function POST(
   const card = await getCard(id);
   const track = card?.tracks.find((t) => t.id === trackId);
   if (!card || !track) return Response.json({ error: "not found" }, { status: 404 });
+  if (isLocked(card)) {
+    return Response.json({ error: "Card is staged — unstage it to edit" }, { status: 400 });
+  }
 
   const body = await request.json().catch(() => ({}) as { keyword?: string });
   const keyword = body.keyword?.trim() || undefined;

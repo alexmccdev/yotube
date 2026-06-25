@@ -12,7 +12,7 @@ export async function POST(_request: Request, ctx: RouteContext<"/api/cards/[id]
   const card = await getCard(id);
   if (!card) return Response.json({ error: "Card not found" }, { status: 404 });
   if (!card.finalized || !card.outputDir) {
-    return Response.json({ error: "Card must be finalized before pushing to Yoto" }, { status: 400 });
+    return Response.json({ error: "Card must be staged before pushing to Yoto" }, { status: 400 });
   }
 
   await setPushingToYoto(id, true);
@@ -21,7 +21,7 @@ export async function POST(_request: Request, ctx: RouteContext<"/api/cards/[id]
     const tracks = card.tracks.map((track, index) => {
       const trackNumber = index + 1;
       if (!track.filePath) {
-        throw new Error(`Track "${track.title}" has no output file; re-finalize the card`);
+        throw new Error(`Track "${track.title}" has no output file; unstage and re-stage the card`);
       }
       return {
         title: track.title,

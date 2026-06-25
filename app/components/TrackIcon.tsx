@@ -5,9 +5,11 @@ import { useState } from "react";
 export default function TrackIcon({
   iconUrl,
   onRegenerate,
+  editable = true,
 }: {
   iconUrl?: string;
   onRegenerate: (keyword?: string) => Promise<void>;
+  editable?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
@@ -24,7 +26,7 @@ export default function TrackIcon({
     }
   };
 
-  if (editing) {
+  if (editing && editable) {
     return (
       <input
         autoFocus
@@ -44,10 +46,10 @@ export default function TrackIcon({
   return (
     <button
       type="button"
-      onClick={() => setEditing(true)}
-      disabled={regenerating}
-      title={iconUrl ? "Click to search for a different icon" : "Click to find an icon"}
-      className="w-8 h-8 shrink-0 rounded-sm border border-ink-text/15 bg-ink-text/5 flex items-center justify-center hover:border-brass transition-colors disabled:opacity-50 overflow-hidden"
+      onClick={() => editable && setEditing(true)}
+      disabled={regenerating || !editable}
+      title={!editable ? undefined : iconUrl ? "Click to search for a different icon" : "Click to find an icon"}
+      className="w-8 h-8 shrink-0 rounded-sm border border-ink-text/15 bg-ink-text/5 flex items-center justify-center hover:border-brass transition-colors disabled:opacity-50 disabled:hover:border-ink-text/15 overflow-hidden"
     >
       {regenerating ? (
         <span className="font-mono text-[9px] text-ink-text/40">…</span>

@@ -52,19 +52,32 @@ export async function downloadAudio(url: string, outPathNoExt: string): Promise<
   return `${outPathNoExt}.m4a`;
 }
 
-/** Remuxes (no re-encode) and tags the already-AAC audio. */
+/** Leading/trailing silence trim + loudness normalization, applied uniformly so tracks
+ *  pulled from different sources don't vary wildly in level when played back to back. */
+const AUDIO_FILTER = [
+  "silenceremove=start_periods=1:start_threshold=-50dB:start_silence=0.1",
+  "silenceremove=stop_periods=1:stop_threshold=-50dB:stop_silence=0.1",
+  "loudnorm=I=-16:TP=-1.5:LRA=11",
+].join(",");
+
+/** Trims silence, normalizes loudness, and tags the audio. Re-encodes (the silence/loudness
+ *  filters require it) so the returned duration reflects the actual trimmed output. */
 export async function tagAndCopy(
   inputPath: string,
   outputPath: string,
   opts: { title: string; track: number; album: string },
-): Promise<void> {
+): Promise<number> {
   try {
     await execa("ffmpeg", [
       "-y",
       "-i",
       inputPath,
+      "-af",
+      AUDIO_FILTER,
       "-c:a",
-      "copy",
+      "aac",
+      "-b:a",
+      "128k",
       "-metadata",
       `title=${opts.title}`,
       "-metadata",
@@ -76,6 +89,20 @@ export async function tagAndCopy(
   } catch (err) {
     throw new ProcessError("Failed to tag audio", stderrOf(err));
   }
+  return getDuration(outputPath);
+}
+
+export async function getDuration(filePath: string): Promise<number> {
+  const { stdout } = await execa("ffprobe", [
+    "-v",
+    "error",
+    "-show_entries",
+    "format=duration",
+    "-of",
+    "default=noprint_wrappers=1:nokey=1",
+    filePath,
+  ]);
+  return Math.round(Number(stdout.trim()));
 }
 
 export async function checkBinaries(): Promise<{ ytDlpOk: boolean; ffmpegOk: boolean }> {

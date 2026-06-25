@@ -51,45 +51,52 @@ async function uploadAudioFile(
   );
 }
 
-async function uploadCustomIcon(accessToken: string, imageUrl: string): Promise<string | undefined> {
+/** Fetches an image and POSTs it to a Yoto media-upload endpoint, never throwing — image
+ *  assignment is best-effort and shouldn't fail the whole card push. */
+async function uploadImage(
+  accessToken: string,
+  imageUrl: string,
+  uploadUrl: string,
+  defaultContentType: string,
+): Promise<unknown | undefined> {
   try {
     const imgRes = await fetch(imageUrl, {
       headers: { "User-Agent": "Mozilla/5.0 (compatible; yotube/1.0)" },
     });
     if (!imgRes.ok) return undefined;
     const buffer = Buffer.from(await imgRes.arrayBuffer());
+    const contentType = imgRes.headers.get("content-type") ?? defaultContentType;
 
-    const res = await fetch(`${API_BASE}/media/displayIcons/user/me/upload`, {
+    const res = await fetch(uploadUrl, {
       method: "POST",
-      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "image/png" },
+      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": contentType },
       body: new Uint8Array(buffer),
     });
     if (!res.ok) return undefined;
-    const body = await res.json();
-    return body.displayIcon?.mediaId;
+    return res.json();
   } catch {
     return undefined;
   }
 }
 
-async function uploadCoverImage(accessToken: string, imageUrl: string): Promise<string | undefined> {
-  try {
-    const imgRes = await fetch(imageUrl);
-    if (!imgRes.ok) return undefined;
-    const buffer = Buffer.from(await imgRes.arrayBuffer());
-    const contentType = imgRes.headers.get("content-type") ?? "image/jpeg";
+async function uploadCustomIcon(accessToken: string, imageUrl: string): Promise<string | undefined> {
+  const body = (await uploadImage(
+    accessToken,
+    imageUrl,
+    `${API_BASE}/media/displayIcons/user/me/upload`,
+    "image/png",
+  )) as { displayIcon?: { mediaId?: string } } | undefined;
+  return body?.displayIcon?.mediaId;
+}
 
-    const res = await fetch(`${API_BASE}/media/coverImage/user/me/upload?autoconvert=true`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": contentType },
-      body: buffer,
-    });
-    if (!res.ok) return undefined;
-    const body = await res.json();
-    return body.coverImage?.mediaUrl;
-  } catch {
-    return undefined;
-  }
+async function uploadCoverImage(accessToken: string, imageUrl: string): Promise<string | undefined> {
+  const body = (await uploadImage(
+    accessToken,
+    imageUrl,
+    `${API_BASE}/media/coverImage/user/me/upload?autoconvert=true`,
+    "image/jpeg",
+  )) as { coverImage?: { mediaUrl?: string } } | undefined;
+  return body?.coverImage?.mediaUrl;
 }
 
 export interface YotoTrackInput {

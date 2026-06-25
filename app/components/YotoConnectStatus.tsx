@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import LoadingDots from "@/app/components/LoadingDots";
 
 export default function YotoConnectStatus() {
   const [connected, setConnected] = useState<boolean | null>(null);
@@ -56,14 +57,28 @@ export default function YotoConnectStatus() {
     }, 1500);
   };
 
+  const disconnectAccount = async () => {
+    await fetch("/api/yoto/connect", { method: "DELETE" });
+    setConnected(false);
+  };
+
   if (connected === null) return null;
 
   if (connected) {
     return (
-      <span className="font-mono text-xs uppercase tracking-wider text-green-500/80 flex items-center gap-1.5">
-        <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
-        Yoto connected
-      </span>
+      <div className="flex items-center gap-2">
+        <span className="pop-in font-mono text-xs uppercase tracking-wider text-green-500/80 flex items-center gap-1.5">
+          <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+          Yoto connected
+        </span>
+        <button
+          type="button"
+          onClick={disconnectAccount}
+          className="press font-mono text-xs uppercase tracking-wider text-paper/40 hover:text-red-400 transition-colors"
+        >
+          Disconnect
+        </button>
+      </div>
     );
   }
 
@@ -75,9 +90,9 @@ export default function YotoConnectStatus() {
         type="button"
         disabled={connecting}
         onClick={connect}
-        className="font-mono text-xs uppercase tracking-wider text-paper/70 hover:text-brass transition-colors disabled:opacity-50"
+        className="press font-mono text-xs uppercase tracking-wider text-paper/70 hover:text-brass transition-colors disabled:opacity-50"
       >
-        {connecting ? "Connecting…" : "Connect Yoto account"}
+        {connecting ? <LoadingDots label="Connecting" /> : "Connect Yoto account"}
       </button>
     </div>
   );

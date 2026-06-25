@@ -3,15 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { downloadAudio, fetchMetadata, tagAndCopy, ProcessError } from "./ytdlp";
 import { pickIcon } from "./yoto-icons";
-
-export type TrackStatus =
-  | "queued"
-  | "fetching"
-  | "downloading"
-  | "ready"
-  | "tagging"
-  | "done"
-  | "error";
+import type { TrackStatus } from "./track-status";
 
 export interface Track {
   id: string;
@@ -272,12 +264,12 @@ export async function finalizeCard(
 
     try {
       await updateTrack(cardId, track.id, { status: "tagging" });
-      await tagAndCopy(`${rawAudioPath(cardId, track.id)}.m4a`, outputPath, {
+      const duration = await tagAndCopy(`${rawAudioPath(cardId, track.id)}.m4a`, outputPath, {
         title: track.title,
         track: trackNumber,
         album: card.title,
       });
-      await updateTrack(cardId, track.id, { status: "done", filePath: outputPath });
+      await updateTrack(cardId, track.id, { status: "done", filePath: outputPath, duration });
     } catch (err) {
       const message = err instanceof ProcessError ? `${err.message}: ${err.stderr}` : String(err);
       await updateTrack(cardId, track.id, { status: "error", error: message });
@@ -398,4 +390,30 @@ export async function clearYotoCardId(cardId: string): Promise<boolean> {
   card.tracks = card.tracks.map((t) => (t.status === "done" ? { ...t, status: "ready" } : t));
   await persist(card);
   return true;
+}
+
+/** In-memory progress is lost on restart: tracks mid-download just resume, but a track
+ *  caught mid-"tagging" can't be resumed safely (the ffmpeg run may be partial), so it's
+ *  reset to "ready" for the user to re-stage. */
+async function recoverIncompleteJobs(): Promise<void> {
+  const cards = await listCards();
+  for (const card of cards) {
+    if (card.finalized) continue;
+    for (const track of card.tracks) {
+      if (track.status === "queued" || track.status === "fetching" || track.status === "downloading") {
+        void processTrack(card.id, track.id);
+      } else if (track.status === "tagging") {
+        await updateTrack(card.id, track.id, { status: "ready" });
+      }
+    }
+  }
+}
+
+declare global {
+  var __yotubeJobsRecovered: boolean | undefined;
+}
+
+if (!globalThis.__yotubeJobsRecovered) {
+  globalThis.__yotubeJobsRecovered = true;
+  void recoverIncompleteJobs();
 }

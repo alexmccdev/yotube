@@ -7,11 +7,12 @@ export default function StageRail({ stages }: { stages: Stage[] }) {
         <div key={stage.id} className="flex items-center gap-2">
           <div className="flex flex-col gap-0.5">
             <span
+              key={stage.status}
               className={
                 stage.status === "done"
                   ? "stage-stamp text-ink-text"
                   : stage.status === "active"
-                    ? "flex items-center gap-1.5 text-ink-text/70"
+                    ? "pop-in flex items-center gap-1.5 text-ink-text/70"
                     : "text-ink-text/30"
               }
             >

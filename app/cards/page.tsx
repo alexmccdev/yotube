@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import LoadingDots from "@/app/components/LoadingDots";
 import TickerTitle from "@/app/components/TickerTitle";
 import YotoConnectStatus from "@/app/components/YotoConnectStatus";
 import { catalogNumber, formatDuration } from "@/lib/format";
@@ -98,14 +99,14 @@ export default function CardsListPage() {
     });
 
   return (
-    <main className="mx-auto max-w-2xl w-full p-6 sm:p-10 flex flex-col gap-6">
+    <main className="mx-auto max-w-2xl w-full p-6 sm:p-10 flex flex-col gap-6 file-in">
       <div className="flex items-center justify-between">
         <h1 className="font-display text-2xl font-semibold text-paper">Library</h1>
         <div className="flex items-center gap-4">
           <YotoConnectStatus />
           <Link
             href="/"
-            className="font-mono text-xs uppercase tracking-wider text-brass hover:text-paper transition-colors"
+            className="press font-mono text-xs uppercase tracking-wider text-brass hover:text-paper transition-colors inline-block"
           >
             + New card
           </Link>
@@ -143,9 +144,7 @@ export default function CardsListPage() {
         </div>
       )}
 
-      {cards === null && (
-        <p className="font-mono text-sm text-paper/50">Loading…</p>
-      )}
+      {cards === null && <LoadingDots label="Pulling the catalog…" />}
       {cards?.length === 0 && (
         <p className="font-mono text-sm text-paper/50">
           No cards yet — create one to get started.
@@ -158,10 +157,11 @@ export default function CardsListPage() {
       )}
 
       <ul className="flex flex-col gap-3">
-        {filteredCards.map((card) => (
+        {filteredCards.map((card, i) => (
           <li
             key={card.id}
-            className="bg-paper text-ink-text rounded-sm shadow-lg shadow-black/20 border-l-4 border-brass overflow-hidden"
+            style={{ animationDelay: `${Math.min(i, 8) * 40}ms` }}
+            className="file-in bg-paper text-ink-text rounded-sm shadow-lg shadow-black/20 border-l-4 border-brass overflow-hidden transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-black/30"
           >
             <div className="flex items-center gap-3 px-4 py-3">
               <div className="w-10 h-14 shrink-0 rounded-sm border border-ink-text/15 bg-ink-text/5 overflow-hidden">
@@ -190,7 +190,7 @@ export default function CardsListPage() {
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={(e) => e.stopPropagation()}
-                    className="font-mono text-[11px] uppercase tracking-wider px-2.5 py-1 rounded-full bg-brass text-ink-text hover:bg-brass/80 transition-colors"
+                    className="press font-mono text-[11px] uppercase tracking-wider px-2.5 py-1 rounded-full bg-brass text-ink-text hover:bg-brass/80 transition-colors"
                   >
                     On Yoto ↗
                   </a>
@@ -202,7 +202,7 @@ export default function CardsListPage() {
                   onClick={() => deleteCard(card)}
                   aria-label="Delete card"
                   title="Delete card"
-                  className="font-mono text-ink-text/30 hover:text-red-700 transition-colors px-1"
+                  className="press font-mono text-ink-text/30 hover:text-red-700 transition-colors px-1"
                 >
                   ✕
                 </button>

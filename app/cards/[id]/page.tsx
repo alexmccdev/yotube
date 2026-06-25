@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import BrassBurst from "@/app/components/BrassBurst";
 import CoverImageField from "@/app/components/CoverImageField";
+import LoadingDots from "@/app/components/LoadingDots";
 import StageRail from "@/app/components/StageRail";
 import StatusPill from "@/app/components/StatusPill";
 import TrackIcon from "@/app/components/TrackIcon";
@@ -12,6 +14,7 @@ import { catalogNumber, formatDuration } from "@/lib/format";
 import { getCardStages } from "@/lib/stage";
 import { type TrackStatus } from "@/lib/track-status";
 import { extractVideoId } from "@/lib/validate";
+import type { IconCandidate } from "@/lib/yoto-icons";
 
 interface Track {
   id: string;
@@ -49,9 +52,12 @@ export default function CardStatusPage() {
   const [titleDraft, setTitleDraft] = useState("");
   const [newTrackUrl, setNewTrackUrl] = useState("");
   const [addingTrack, setAddingTrack] = useState(false);
+  const [justLinked, setJustLinked] = useState(false);
   const dragIndex = useRef<number | null>(null);
   const cardRef = useRef<Card | null>(null);
-  cardRef.current = card;
+  useEffect(() => {
+    cardRef.current = card;
+  }, [card]);
 
   useEffect(() => {
     fetch("/api/yoto/status")
@@ -99,7 +105,7 @@ export default function CardStatusPage() {
         >
           ← Library
         </Link>
-        <p className="font-mono text-sm text-paper/50">Loading…</p>
+        <LoadingDots label="Pulling the card…" />
       </main>
     );
   }
@@ -179,20 +185,28 @@ export default function CardStatusPage() {
     });
   };
 
-  const regenerateIcon = async (trackId: string, keyword?: string) => {
+  const fetchIconCandidates = async (trackId: string, keyword?: string): Promise<IconCandidate[]> => {
+    const url = new URL(`/api/cards/${cardId}/tracks/${trackId}/icon`, window.location.origin);
+    if (keyword) url.searchParams.set("keyword", keyword);
+    const res = await fetch(url);
+    if (!res.ok) return [];
+    const body = await res.json();
+    return body.candidates ?? [];
+  };
+
+  const selectIcon = async (trackId: string, candidate: IconCandidate) => {
     const res = await fetch(`/api/cards/${cardId}/tracks/${trackId}/icon`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ keyword }),
+      body: JSON.stringify(candidate),
     });
     if (!res.ok) return;
-    const body = await res.json();
     setCard((prev) =>
       prev
         ? {
             ...prev,
             tracks: prev.tracks.map((t) =>
-              t.id === trackId ? { ...t, iconUrl: body.iconUrl } : t,
+              t.id === trackId ? { ...t, iconUrl: candidate.url } : t,
             ),
           }
         : prev,
@@ -259,6 +273,8 @@ export default function CardStatusPage() {
     setCard((prev) =>
       prev ? { ...prev, pushingToYoto: false, yotoCardId: body.yotoCardId } : prev,
     );
+    setJustLinked(true);
+    setTimeout(() => setJustLinked(false), 600);
   };
 
   const unlinkYoto = async () => {
@@ -298,11 +314,11 @@ export default function CardStatusPage() {
   };
 
   return (
-    <main className="mx-auto max-w-2xl w-full p-6 sm:p-10 flex flex-col gap-6">
+    <main className="mx-auto max-w-2xl w-full p-6 sm:p-10 flex flex-col gap-6 file-in">
       <div className="flex items-center justify-between">
         <Link
           href="/cards"
-          className="font-mono text-xs uppercase tracking-wider text-paper/70 hover:text-brass transition-colors"
+          className="press font-mono text-xs uppercase tracking-wider text-paper/70 hover:text-brass transition-colors inline-block"
         >
           ← Library
         </Link>
@@ -310,7 +326,7 @@ export default function CardStatusPage() {
           type="button"
           disabled={deleting}
           onClick={deleteCard}
-          className="font-mono text-xs uppercase tracking-wider text-paper/30 hover:text-red-400 transition-colors disabled:opacity-50"
+          className="press font-mono text-xs uppercase tracking-wider text-paper/30 hover:text-red-400 transition-colors disabled:opacity-50"
         >
           {deleting ? "Deleting…" : "Delete card"}
         </button>
@@ -374,7 +390,8 @@ export default function CardStatusPage() {
                 onDragStart={() => (dragIndex.current = index)}
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={() => onDrop(index)}
-                className={`py-2.5 flex flex-col gap-1 ${locked ? "" : "cursor-move"}`}
+                style={{ animationDelay: `${Math.min(index, 10) * 30}ms` }}
+                className={`file-in py-2.5 flex flex-col gap-1 ${locked ? "" : "cursor-move"}`}
               >
                 <div className="flex items-center gap-3">
                   <span className="font-mono text-xs text-ink-text/40 w-10 shrink-0 tabular-nums">
@@ -382,7 +399,8 @@ export default function CardStatusPage() {
                   </span>
                   <TrackIcon
                     iconUrl={track.iconUrl}
-                    onRegenerate={(keyword) => regenerateIcon(track.id, keyword)}
+                    onFetchCandidates={(keyword) => fetchIconCandidates(track.id, keyword)}
+                    onSelect={(candidate) => selectIcon(track.id, candidate)}
                     editable={!locked}
                   />
                   <TrackTitleField
@@ -395,7 +413,7 @@ export default function CardStatusPage() {
                       type="button"
                       aria-label="Remove track"
                       title="Remove track"
-                      className="font-mono text-xs text-ink-text/30 hover:text-red-700 transition-colors px-1 shrink-0"
+                      className="press font-mono text-xs text-ink-text/30 hover:text-red-700 transition-colors px-1 shrink-0"
                       onClick={() => removeTrack(track.id)}
                     >
                       ✕
@@ -416,7 +434,7 @@ export default function CardStatusPage() {
                   {track.status === "error" && (
                     <button
                       type="button"
-                      className="font-mono text-xs uppercase tracking-wider text-ink-text/50 hover:text-brass transition-colors"
+                      className="press font-mono text-xs uppercase tracking-wider text-ink-text/50 hover:text-brass transition-colors"
                       onClick={() => retryTrack(track.id)}
                     >
                       Retry
@@ -454,9 +472,13 @@ export default function CardStatusPage() {
                   type="button"
                   disabled={addingTrack || !newTrackUrl.trim()}
                   onClick={addTrack}
-                  className="font-mono text-xs uppercase tracking-wider text-ink-text/60 hover:text-brass transition-colors disabled:opacity-50 shrink-0"
+                  className="press font-mono text-xs uppercase tracking-wider text-ink-text/60 hover:text-brass transition-colors disabled:opacity-50 shrink-0"
                 >
-                  {addingTrack ? "Adding…" : "+ Add"}
+                  {addingTrack ? (
+                    <LoadingDots className="font-mono text-xs text-ink-text/60" />
+                  ) : (
+                    "+ Add"
+                  )}
                 </button>
               </div>
             </div>
@@ -467,14 +489,17 @@ export default function CardStatusPage() {
           {card.finalized && card.outputDir ? (
             <div className="flex flex-col gap-2">
               {card.yotoCardId && (
-                <a
-                  href={`https://my.yotoplay.com/card/${card.yotoCardId}/edit`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="self-start font-mono text-[11px] uppercase tracking-wider px-2.5 py-1 rounded-full bg-brass text-ink-text hover:opacity-80 transition-opacity"
-                >
-                  On Yoto ↗
-                </a>
+                <span className="relative self-start inline-block">
+                  <a
+                    href={`https://my.yotoplay.com/card/${card.yotoCardId}/edit`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="press pop-in self-start font-mono text-[11px] uppercase tracking-wider px-2.5 py-1 rounded-full bg-brass text-ink-text hover:opacity-80 transition-opacity inline-block"
+                  >
+                    On Yoto ↗
+                  </a>
+                  {justLinked && <BrassBurst />}
+                </span>
               )}
               {card.pushError && <p className="text-sm text-red-700">{card.pushError}</p>}
 
@@ -482,7 +507,7 @@ export default function CardStatusPage() {
                 <button
                   type="button"
                   onClick={unlinkYoto}
-                  className="self-start font-mono text-xs uppercase tracking-wider text-ink-text/40 hover:text-red-700 transition-colors"
+                  className="press self-start font-mono text-xs uppercase tracking-wider text-ink-text/40 hover:text-red-700 transition-colors"
                 >
                   Unlink from Yoto
                 </button>
@@ -492,9 +517,13 @@ export default function CardStatusPage() {
                     type="button"
                     disabled={card.pushingToYoto || yotoConnected === null || yotoConnected === false}
                     onClick={pushToYoto}
-                    className="self-start bg-ink text-paper font-mono text-sm uppercase tracking-wider px-5 py-2.5 rounded-sm hover:bg-brass hover:text-ink-text transition-colors disabled:opacity-50"
+                    className="press self-start bg-ink text-paper font-mono text-sm uppercase tracking-wider px-5 py-2.5 rounded-sm hover:bg-brass hover:text-ink-text transition-colors disabled:opacity-50"
                   >
-                    {card.pushingToYoto ? "Pushing…" : "Push to Yoto"}
+                    {card.pushingToYoto ? (
+                      <LoadingDots label="Pushing" className="font-mono text-sm text-paper" />
+                    ) : (
+                      "Push to Yoto"
+                    )}
                   </button>
                   <p className="font-mono text-[11px] text-ink-text/40">
                     {yotoConnected === false
@@ -505,7 +534,7 @@ export default function CardStatusPage() {
                     type="button"
                     disabled={unstaging}
                     onClick={unstage}
-                    className="self-start mt-2 font-mono text-xs uppercase tracking-wider text-ink-text/40 hover:text-brass transition-colors disabled:opacity-50"
+                    className="press self-start mt-2 font-mono text-xs uppercase tracking-wider text-ink-text/40 hover:text-brass transition-colors disabled:opacity-50"
                   >
                     {unstaging ? "Unstaging…" : "Unstage to edit"}
                   </button>
@@ -518,9 +547,13 @@ export default function CardStatusPage() {
                 type="button"
                 disabled={!allReady || finalizing}
                 onClick={finalize}
-                className="self-start bg-ink text-paper font-mono text-sm uppercase tracking-wider px-5 py-2.5 rounded-sm hover:bg-brass hover:text-ink-text transition-colors disabled:opacity-50"
+                className="press self-start bg-ink text-paper font-mono text-sm uppercase tracking-wider px-5 py-2.5 rounded-sm hover:bg-brass hover:text-ink-text transition-colors disabled:opacity-50"
               >
-                {finalizing ? "Staging…" : "Stage card"}
+                {finalizing ? (
+                  <LoadingDots label="Staging" className="font-mono text-sm text-paper" />
+                ) : (
+                  "Stage card"
+                )}
               </button>
               <p className="font-mono text-[11px] text-ink-text/40">
                 {card.tracks.length === 0

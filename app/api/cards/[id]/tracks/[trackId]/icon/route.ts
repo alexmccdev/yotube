@@ -1,5 +1,21 @@
 import { getCard, isLocked, setTrackIcon } from "@/lib/jobs";
-import { pickIcon } from "@/lib/yoto-icons";
+import { findIconCandidates, type IconCandidate } from "@/lib/yoto-icons";
+
+const MAX_CANDIDATES = 12;
+
+export async function GET(
+  request: Request,
+  ctx: RouteContext<"/api/cards/[id]/tracks/[trackId]/icon">,
+) {
+  const { id, trackId } = await ctx.params;
+  const card = await getCard(id);
+  const track = card?.tracks.find((t) => t.id === trackId);
+  if (!card || !track) return Response.json({ error: "not found" }, { status: 404 });
+
+  const keyword = new URL(request.url).searchParams.get("keyword")?.trim() || undefined;
+  const candidates = await findIconCandidates(track.title, keyword);
+  return Response.json({ candidates: candidates.slice(0, MAX_CANDIDATES) });
+}
 
 export async function POST(
   request: Request,
@@ -13,14 +29,16 @@ export async function POST(
     return Response.json({ error: "Card is staged — unstage it to edit" }, { status: 400 });
   }
 
-  const body = await request.json().catch(() => ({}) as { keyword?: string });
-  const keyword = body.keyword?.trim() || undefined;
-
-  const icon = await pickIcon(track.title, track.iconId ? [track.iconId] : [], keyword);
-  if (!icon) {
-    return Response.json({ error: "No matching icon found on yotoicons.com or Yoto's library" }, { status: 404 });
+  const body = await request.json().catch(() => ({}) as Partial<IconCandidate>);
+  if (!body.url || !body.source || !body.id) {
+    return Response.json({ error: "url, source, and id are required" }, { status: 400 });
   }
 
-  await setTrackIcon(id, trackId, icon);
-  return Response.json({ iconUrl: icon.url, iconSource: icon.source });
+  await setTrackIcon(id, trackId, {
+    url: body.url,
+    source: body.source,
+    id: body.id,
+    mediaId: body.mediaId,
+  });
+  return Response.json({ ok: true });
 }

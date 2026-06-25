@@ -22,6 +22,7 @@ interface Card {
   createdAt: string;
   yotoCardId?: string;
   pushingToYoto?: boolean;
+  coverImageUrl?: string;
 }
 
 function totalDuration(tracks: Track[]): number {
@@ -99,6 +100,11 @@ export default function CardsListPage() {
             className="bg-paper text-ink-text rounded-sm shadow-lg shadow-black/20 border-l-4 border-brass overflow-hidden"
           >
             <div className="flex items-center gap-3 px-4 py-3">
+              <div className="w-10 h-14 shrink-0 rounded-sm border border-ink-text/15 bg-ink-text/5 overflow-hidden">
+                {card.coverImageUrl ? (
+                  <img src={card.coverImageUrl} alt="" className="w-full h-full object-cover" />
+                ) : null}
+              </div>
               <div className="flex-1 min-w-0">
                 <div className="font-mono text-[11px] uppercase tracking-wider text-ink-text/40">
                   No. {catalogNumber(card.id)}

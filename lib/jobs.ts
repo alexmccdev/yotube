@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { downloadAudio, fetchMetadata, tagAndCopy, ProcessError } from "./ytdlp";
+import { pickIcon } from "./yoto-icons";
 
 export type TrackStatus =
   | "queued"
@@ -20,6 +21,11 @@ export interface Track {
   error?: string;
   duration?: number;
   filePath?: string;
+  thumbnail?: string;
+  iconUrl?: string;
+  iconSource?: "yotoicons" | "yoto-library";
+  iconId?: string;
+  iconMediaId?: string;
 }
 
 export interface Card {
@@ -32,6 +38,8 @@ export interface Card {
   yotoCardId?: string;
   pushingToYoto?: boolean;
   pushError?: string;
+  coverImageUrl?: string;
+  coverImageSource?: "youtube-thumbnail" | "custom";
 }
 
 const WORK_DIR = path.join(process.cwd(), "work");
@@ -139,7 +147,11 @@ async function processTrack(cardId: string, trackId: string): Promise<void> {
         status: "downloading",
         title: meta.title,
         duration: meta.duration,
+        thumbnail: meta.thumbnail,
       });
+      void assignIconForTrack(cardId, trackId, meta.title);
+      void assignCoverFromThumbnail(cardId, meta.thumbnail);
+
       await downloadAudio(track.url, rawAudioPath(cardId, trackId));
 
       await updateTrack(cardId, trackId, { status: "ready" });
@@ -244,7 +256,66 @@ export async function finalizeCard(
 
   await cleanupWorkAudio(cardId);
 
+  void autoAssignIconsAndCover(cardId);
+
   return { ok: true, outputDir };
+}
+
+async function assignIconForTrack(cardId: string, trackId: string, title: string): Promise<void> {
+  const icon = await pickIcon(title);
+  if (icon) await setTrackIcon(cardId, trackId, icon);
+}
+
+async function assignCoverFromThumbnail(cardId: string, thumbnail?: string): Promise<void> {
+  if (!thumbnail) return;
+  const card = await getCard(cardId);
+  if (!card || card.coverImageUrl) return;
+  await setCoverImageUrl(cardId, thumbnail, "youtube-thumbnail");
+}
+
+async function autoAssignIconsAndCover(cardId: string): Promise<void> {
+  const card = await getCard(cardId);
+  if (!card) return;
+
+  if (!card.coverImageUrl) {
+    const thumbnail = card.tracks.find((t) => t.thumbnail)?.thumbnail;
+    if (thumbnail) await setCoverImageUrl(cardId, thumbnail, "youtube-thumbnail");
+  }
+
+  for (const track of card.tracks) {
+    if (track.iconUrl) continue;
+    const icon = await pickIcon(track.title);
+    if (icon) await setTrackIcon(cardId, track.id, icon);
+  }
+}
+
+export async function setTrackIcon(
+  cardId: string,
+  trackId: string,
+  icon: { url: string; source: "yotoicons" | "yoto-library"; id: string; mediaId?: string },
+): Promise<boolean> {
+  const card = await getCard(cardId);
+  if (!card || !card.tracks.some((t) => t.id === trackId)) return false;
+  await updateTrack(cardId, trackId, {
+    iconUrl: icon.url,
+    iconSource: icon.source,
+    iconId: icon.id,
+    iconMediaId: icon.mediaId,
+  });
+  return true;
+}
+
+export async function setCoverImageUrl(
+  cardId: string,
+  coverImageUrl: string,
+  source: "youtube-thumbnail" | "custom",
+): Promise<boolean> {
+  const card = await getCard(cardId);
+  if (!card) return false;
+  card.coverImageUrl = coverImageUrl;
+  card.coverImageSource = source;
+  await persist(card);
+  return true;
 }
 
 export async function deleteCard(cardId: string): Promise<boolean> {

@@ -3,8 +3,10 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import CoverImageField from "@/app/components/CoverImageField";
 import StageRail from "@/app/components/StageRail";
 import StatusPill from "@/app/components/StatusPill";
+import TrackIcon from "@/app/components/TrackIcon";
 import TrackTitleField from "@/app/components/TrackTitleField";
 import { catalogNumber, formatDuration } from "@/lib/format";
 import { getCardStages } from "@/lib/stage";
@@ -17,6 +19,7 @@ interface Track {
   status: TrackStatus;
   error?: string;
   duration?: number;
+  iconUrl?: string;
 }
 
 interface Card {
@@ -28,6 +31,7 @@ interface Card {
   yotoCardId?: string;
   pushingToYoto?: boolean;
   pushError?: string;
+  coverImageUrl?: string;
 }
 
 export default function CardStatusPage() {
@@ -92,6 +96,35 @@ export default function CardStatusPage() {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ title }),
+    });
+  };
+
+  const regenerateIcon = async (trackId: string, keyword?: string) => {
+    const res = await fetch(`/api/cards/${cardId}/tracks/${trackId}/icon`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ keyword }),
+    });
+    if (!res.ok) return;
+    const body = await res.json();
+    setCard((prev) =>
+      prev
+        ? {
+            ...prev,
+            tracks: prev.tracks.map((t) =>
+              t.id === trackId ? { ...t, iconUrl: body.iconUrl } : t,
+            ),
+          }
+        : prev,
+    );
+  };
+
+  const setCoverImage = async (coverImageUrl: string) => {
+    setCard((prev) => (prev ? { ...prev, coverImageUrl } : prev));
+    await fetch(`/api/cards/${cardId}/cover`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ coverImageUrl }),
     });
   };
 
@@ -182,14 +215,17 @@ export default function CardStatusPage() {
       <div className="bg-paper text-ink-text rounded-sm shadow-xl shadow-black/30 overflow-hidden">
         <div className="border-l-4 border-brass px-6 sm:px-8 pt-6 pb-7 flex flex-col gap-6">
           <div className="flex flex-col gap-4">
-            <div className="flex flex-col gap-1">
-              <div className="font-mono text-[11px] uppercase tracking-wider text-ink-text/40">
-                No. {catalogNumber(card.id)}
-              </div>
-              <h1 className="font-display text-3xl font-semibold leading-tight">{card.title}</h1>
-              <div className="font-mono text-xs text-ink-text/50 tabular-nums">
-                {card.tracks.length} track{card.tracks.length === 1 ? "" : "s"}
-                {hasAnyDuration && ` · ${formatDuration(totalDuration)} total`}
+            <div className="flex items-start gap-4">
+              <CoverImageField coverImageUrl={card.coverImageUrl} onChange={setCoverImage} />
+              <div className="flex flex-col gap-1 min-w-0">
+                <div className="font-mono text-[11px] uppercase tracking-wider text-ink-text/40">
+                  No. {catalogNumber(card.id)}
+                </div>
+                <h1 className="font-display text-3xl font-semibold leading-tight">{card.title}</h1>
+                <div className="font-mono text-xs text-ink-text/50 tabular-nums">
+                  {card.tracks.length} track{card.tracks.length === 1 ? "" : "s"}
+                  {hasAnyDuration && ` · ${formatDuration(totalDuration)} total`}
+                </div>
               </div>
             </div>
             <StageRail stages={stages} />
@@ -209,6 +245,10 @@ export default function CardStatusPage() {
                   <span className="font-mono text-xs text-ink-text/40 w-10 shrink-0 tabular-nums">
                     {index + 1}/{card.tracks.length}
                   </span>
+                  <TrackIcon
+                    iconUrl={track.iconUrl}
+                    onRegenerate={(keyword) => regenerateIcon(track.id, keyword)}
+                  />
                   <TrackTitleField
                     title={track.title}
                     onRename={(title) => renameTrack(track.id, title)}
@@ -302,7 +342,7 @@ export default function CardStatusPage() {
                   ? "Add at least one track before finalizing."
                   : notReadyCount > 0
                     ? `Waiting on ${notReadyCount} track${notReadyCount === 1 ? "" : "s"} to finish downloading.`
-                    : "Re-encodes every track to a small MP3 and tags it for Yoto."}
+                    : "Tags every track and packages it for Yoto."}
               </p>
             </div>
           )}

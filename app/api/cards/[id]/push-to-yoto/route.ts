@@ -28,10 +28,12 @@ export async function POST(_request: Request, ctx: RouteContext<"/api/cards/[id]
         filePath: track.filePath,
         duration: track.duration ?? 0,
         trackNumber,
+        iconUrl: track.iconUrl,
+        iconMediaId: track.iconMediaId,
       };
     });
 
-    const { yotoCardId } = await pushCardToYoto(card.title, tracks);
+    const { yotoCardId } = await pushCardToYoto(card.title, tracks, card.coverImageUrl);
     await setYotoCardId(id, yotoCardId);
     await setPushingToYoto(id, false);
     return Response.json({ yotoCardId });

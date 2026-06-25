@@ -31,7 +31,7 @@ async function uploadAudioFile(
   if (!putRes.ok) throw new Error(`Failed to upload audio file: ${await putRes.text()}`);
 
   let lastBody: unknown;
-  for (let attempt = 0; attempt < 60; attempt++) {
+  for (let attempt = 0; attempt < 24; attempt++) {
     const pollRes = await fetch(
       `${API_BASE}/media/upload/${upload.uploadId}/transcoded?loudnorm=false`,
       { headers: { Authorization: `Bearer ${accessToken}` } },
@@ -44,11 +44,52 @@ async function uploadAudioFile(
     } else {
       lastBody = await pollRes.text();
     }
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    await new Promise((resolve) => setTimeout(resolve, 5000));
   }
   throw new Error(
     `Timed out waiting for Yoto to transcode audio. Last response: ${JSON.stringify(lastBody)}`,
   );
+}
+
+async function uploadCustomIcon(accessToken: string, imageUrl: string): Promise<string | undefined> {
+  try {
+    const imgRes = await fetch(imageUrl, {
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; yotube/1.0)" },
+    });
+    if (!imgRes.ok) return undefined;
+    const buffer = Buffer.from(await imgRes.arrayBuffer());
+
+    const res = await fetch(`${API_BASE}/media/displayIcons/user/me/upload`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "image/png" },
+      body: new Uint8Array(buffer),
+    });
+    if (!res.ok) return undefined;
+    const body = await res.json();
+    return body.displayIcon?.mediaId;
+  } catch {
+    return undefined;
+  }
+}
+
+async function uploadCoverImage(accessToken: string, imageUrl: string): Promise<string | undefined> {
+  try {
+    const imgRes = await fetch(imageUrl);
+    if (!imgRes.ok) return undefined;
+    const buffer = Buffer.from(await imgRes.arrayBuffer());
+    const contentType = imgRes.headers.get("content-type") ?? "image/jpeg";
+
+    const res = await fetch(`${API_BASE}/media/coverImage/user/me/upload?autoconvert=true`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": contentType },
+      body: buffer,
+    });
+    if (!res.ok) return undefined;
+    const body = await res.json();
+    return body.coverImage?.mediaUrl;
+  } catch {
+    return undefined;
+  }
 }
 
 export interface YotoTrackInput {
@@ -56,6 +97,8 @@ export interface YotoTrackInput {
   filePath: string;
   duration: number;
   trackNumber: number;
+  iconUrl?: string;
+  iconMediaId?: string;
 }
 
 export interface PushCardResult {
@@ -65,6 +108,7 @@ export interface PushCardResult {
 export async function pushCardToYoto(
   title: string,
   tracks: YotoTrackInput[],
+  coverImageUrl?: string,
 ): Promise<PushCardResult> {
   const accessToken = await getValidAccessToken();
 
@@ -72,10 +116,18 @@ export async function pushCardToYoto(
   for (const track of tracks) {
     const { transcodedSha256 } = await uploadAudioFile(accessToken, track.filePath);
     const trackKey = String(track.trackNumber).padStart(2, "0");
+
+    const iconMediaId = track.iconMediaId
+      ? track.iconMediaId
+      : track.iconUrl
+        ? await uploadCustomIcon(accessToken, track.iconUrl)
+        : undefined;
+    const display = iconMediaId ? { icon16x16: `yoto:#${iconMediaId}` } : {};
+
     chapters.push({
       key: trackKey,
       title: track.title,
-      display: {},
+      display,
       defaultTrackDisplay: trackKey,
       defaultTrackAmbient: trackKey,
       tracks: [
@@ -88,11 +140,13 @@ export async function pushCardToYoto(
           format: "aac",
           duration: track.duration,
           fileSize: (await fs.stat(track.filePath)).size,
-          display: {},
+          display,
         },
       ],
     });
   }
+
+  const coverMediaUrl = coverImageUrl ? await uploadCoverImage(accessToken, coverImageUrl) : undefined;
 
   const res = await fetch(`${API_BASE}/content`, {
     method: "POST",
@@ -103,6 +157,7 @@ export async function pushCardToYoto(
     body: JSON.stringify({
       title,
       content: { chapters },
+      ...(coverMediaUrl ? { metadata: { cover: { imageL: coverMediaUrl } } } : {}),
     }),
   });
   if (!res.ok) throw new Error(`Failed to create Yoto card: ${await res.text()}`);

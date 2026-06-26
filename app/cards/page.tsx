@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import GearIcon from "@/app/components/GearIcon";
 import LoadingDots from "@/app/components/LoadingDots";
 import TickerTitle from "@/app/components/TickerTitle";
 import YotoConnectStatus from "@/app/components/YotoConnectStatus";
@@ -100,15 +101,17 @@ export default function CardsListPage() {
 
   return (
     <main className="mx-auto max-w-2xl w-full p-6 sm:p-10 flex flex-col gap-6 file-in">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-4">
         <h1 className="font-display text-2xl font-semibold text-paper">Library</h1>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3 shrink-0">
           <YotoConnectStatus />
           <Link
-            href="/"
-            className="press font-mono text-xs uppercase tracking-wider text-brass hover:text-paper transition-colors inline-block"
+            href="/settings"
+            title="Settings"
+            aria-label="Settings"
+            className="press text-paper/40 hover:text-brass transition-colors inline-block"
           >
-            + New card
+            <GearIcon />
           </Link>
         </div>
       </div>
@@ -157,6 +160,14 @@ export default function CardsListPage() {
       )}
 
       <ul className="flex flex-col gap-3">
+        <li className="file-in">
+          <Link
+            href="/"
+            className="press flex items-center justify-center gap-2 rounded-sm border-2 border-dashed border-paper/25 hover:border-brass text-paper/50 hover:text-brass transition-colors py-4 font-mono text-sm uppercase tracking-wider"
+          >
+            + New card
+          </Link>
+        </li>
         {filteredCards.map((card, i) => (
           <li
             key={card.id}

@@ -3,7 +3,6 @@ import fs from "node:fs/promises";
 import http from "node:http";
 import path from "node:path";
 
-const CLIENT_ID = process.env.YOTO_CLIENT_ID;
 const REDIRECT_URI = "http://127.0.0.1:8787/callback";
 const AUTHORIZE_URL = "https://login.yotoplay.com/authorize";
 const TOKEN_URL = "https://login.yotoplay.com/oauth/token";
@@ -11,6 +10,7 @@ const AUDIENCE = "https://api.yotoplay.com";
 const SCOPES = "user:content:manage user:content:view user:icons:manage offline_access";
 
 const TOKEN_PATH = path.join(process.cwd(), "work", ".yoto-auth.json");
+const CONFIG_PATH = path.join(process.cwd(), "work", ".yoto-config.json");
 
 let activeCallbackServer: http.Server | undefined;
 let lastConnectError: string | undefined;
@@ -23,6 +23,42 @@ interface StoredTokens {
 interface TokenResponse {
   access_token: string;
   refresh_token: string;
+}
+
+interface StoredConfig {
+  clientId?: string;
+}
+
+async function readConfig(): Promise<StoredConfig> {
+  try {
+    const raw = await fs.readFile(CONFIG_PATH, "utf8");
+    return JSON.parse(raw) as StoredConfig;
+  } catch {
+    return {};
+  }
+}
+
+async function writeConfig(config: StoredConfig): Promise<void> {
+  await fs.mkdir(path.dirname(CONFIG_PATH), { recursive: true });
+  await fs.writeFile(CONFIG_PATH, JSON.stringify(config, null, 2));
+}
+
+/** The Yoto client ID, as saved from the settings page. */
+export async function getClientId(): Promise<string | undefined> {
+  const { clientId } = await readConfig();
+  return clientId;
+}
+
+/** Saving a new client ID invalidates any existing tokens — they were issued for a
+ *  different app registration and won't be valid against this one. */
+export async function setClientId(clientId: string): Promise<void> {
+  await writeConfig({ clientId });
+  await disconnect();
+}
+
+export async function clearClientId(): Promise<void> {
+  await writeConfig({});
+  await disconnect();
 }
 
 function base64url(input: Buffer): string {
@@ -66,13 +102,17 @@ export async function disconnect(): Promise<void> {
   await fs.rm(TOKEN_PATH, { force: true });
 }
 
-async function exchangeCodeForTokens(code: string, codeVerifier: string): Promise<TokenResponse> {
+async function exchangeCodeForTokens(
+  code: string,
+  codeVerifier: string,
+  clientId: string,
+): Promise<TokenResponse> {
   const res = await fetch(TOKEN_URL, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       grant_type: "authorization_code",
-      client_id: CLIENT_ID!,
+      client_id: clientId,
       code_verifier: codeVerifier,
       code,
       redirect_uri: REDIRECT_URI,
@@ -83,12 +123,14 @@ async function exchangeCodeForTokens(code: string, codeVerifier: string): Promis
 }
 
 async function refreshTokens(refreshToken: string): Promise<TokenResponse> {
+  const clientId = await getClientId();
+  if (!clientId) throw new Error("Yoto client ID is not set. Add it from the settings page.");
   const res = await fetch(TOKEN_URL, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       grant_type: "refresh_token",
-      client_id: CLIENT_ID!,
+      client_id: clientId,
       refresh_token: refreshToken,
     }),
   });
@@ -102,8 +144,9 @@ async function refreshTokens(refreshToken: string): Promise<TokenResponse> {
  * and exchanging the code for tokens happens in the background — poll
  * `isConnected()` / `getLastConnectError()` to learn the outcome.
  */
-export function startConnectYotoAccount(): { authorizeUrl: string } {
-  if (!CLIENT_ID) throw new Error("YOTO_CLIENT_ID is not set");
+export async function startConnectYotoAccount(): Promise<{ authorizeUrl: string }> {
+  const clientId = await getClientId();
+  if (!clientId) throw new Error("Yoto client ID is not set. Add it from the settings page.");
 
   if (activeCallbackServer) {
     activeCallbackServer.close();
@@ -118,7 +161,7 @@ export function startConnectYotoAccount(): { authorizeUrl: string } {
   authorizeUrl.searchParams.set("audience", AUDIENCE);
   authorizeUrl.searchParams.set("scope", SCOPES);
   authorizeUrl.searchParams.set("response_type", "code");
-  authorizeUrl.searchParams.set("client_id", CLIENT_ID);
+  authorizeUrl.searchParams.set("client_id", clientId);
   authorizeUrl.searchParams.set("code_challenge", codeChallenge);
   authorizeUrl.searchParams.set("code_challenge_method", "S256");
   authorizeUrl.searchParams.set("redirect_uri", REDIRECT_URI);
@@ -151,7 +194,7 @@ export function startConnectYotoAccount(): { authorizeUrl: string } {
   });
 
   void codePromise
-    .then((code) => exchangeCodeForTokens(code, codeVerifier))
+    .then((code) => exchangeCodeForTokens(code, codeVerifier, clientId))
     .then((tokens) => writeTokens({ accessToken: tokens.access_token, refreshToken: tokens.refresh_token }))
     .catch((err) => {
       lastConnectError = err instanceof Error ? err.message : String(err);

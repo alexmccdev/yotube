@@ -28,6 +28,24 @@ export function normalizeYoutubeInput(value: string): string | undefined {
   return undefined;
 }
 
+/**
+ * A URL counts as a playlist link if it has a `list=` param (and no `v=` param — a URL
+ * with both is a single video played from within a playlist, which yt-dlp treats as the
+ * video alone, and we match that to avoid surprising single-video pastes).
+ */
+export function isYoutubePlaylistUrl(value: string): boolean {
+  const trimmed = value.trim();
+  if (!isYoutubeUrl(trimmed)) return false;
+  try {
+    const url = new URL(trimmed);
+    if (url.searchParams.get("v")) return false;
+    if (url.searchParams.get("list")) return true;
+    return url.pathname.startsWith("/playlist");
+  } catch {
+    return false;
+  }
+}
+
 /** Extracts the 11-char video ID from a YouTube URL or bare ID, for dedupe comparisons. */
 export function extractVideoId(value: string): string | undefined {
   const trimmed = value.trim();

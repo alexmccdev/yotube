@@ -162,7 +162,7 @@ export default function CardsListPage() {
       <ul className="flex flex-col gap-3">
         <li className="file-in">
           <Link
-            href="/"
+            href="/new-card"
             className="press flex items-center justify-center gap-2 rounded-sm border-2 border-dashed border-paper/25 hover:border-brass text-paper/50 hover:text-brass transition-colors py-4 font-mono text-sm uppercase tracking-wider"
           >
             + New card

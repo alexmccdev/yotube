@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { downloadAudio, fetchMetadata, tagAndCopy, ProcessError } from "./ytdlp";
+import { extractVideoId } from "./validate";
 import { pickIcon } from "./yoto-icons";
 import type { TrackStatus } from "./track-status";
 
@@ -34,7 +35,7 @@ export interface Card {
   coverImageSource?: "youtube-thumbnail" | "custom";
 }
 
-const WORK_DIR = path.join(process.cwd(), "work");
+const WORK_DIR = process.env.WORK_DIR ?? path.join(process.cwd(), "work");
 const CARDS_DIR = process.env.CARDS_DIR ?? path.join(process.cwd(), "cards");
 
 const cache = new Map<string, Card>();
@@ -173,6 +174,39 @@ export async function addTrack(cardId: string, url: string, titleHint?: string):
   if (titleHint) void assignIconForTrack(cardId, track.id, titleHint);
   void processTrack(cardId, track.id);
   return track;
+}
+
+/**
+ * Adds many tracks at once (e.g. from a playlist import). Dedupes against video IDs already
+ * on the card — playlists, especially auto-generated "Mix" playlists, commonly repeat videos.
+ * Paced with a small delay between job starts: the concurrency-3 pool only bounds simultaneous
+ * yt-dlp processes, not how fast new ones get queued, and bursting 100+ requests risks YouTube
+ * IP throttling.
+ */
+export async function addTracksBatch(
+  cardId: string,
+  videos: { videoId: string; url: string; title: string }[],
+): Promise<{ added: Track[]; skipped: number }> {
+  const card = await getCard(cardId);
+  if (!card || isLocked(card)) return { added: [], skipped: videos.length };
+
+  const existingIds = new Set(card.tracks.map((t) => extractVideoId(t.url)).filter(Boolean));
+  const added: Track[] = [];
+  let skipped = 0;
+
+  for (const video of videos) {
+    if (existingIds.has(video.videoId)) {
+      skipped++;
+      continue;
+    }
+    existingIds.add(video.videoId);
+    const track = await addTrack(cardId, video.url, video.title);
+    if (track) added.push(track);
+    else skipped++;
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+
+  return { added, skipped };
 }
 
 export async function removeTrack(cardId: string, trackId: string): Promise<boolean> {

@@ -32,6 +32,57 @@ export async function fetchMetadata(url: string): Promise<VideoMetadata> {
   }
 }
 
+export interface PlaylistVideo {
+  id: string;
+  title: string;
+}
+
+export interface PlaylistListing {
+  playlistTitle?: string;
+  videos: PlaylistVideo[];
+  /** Entries yt-dlp returned but couldn't be used (unparseable, private, or deleted). */
+  skipped: number;
+}
+
+/**
+ * Lists a playlist's videos without downloading anything. Uses `--flat-playlist` so this
+ * stays fast even for large playlists. Unavailable entries (private/deleted videos) come
+ * back as stub JSON lines rather than being omitted, so each line is checked individually
+ * instead of failing the whole listing.
+ */
+export async function fetchPlaylistVideoIds(url: string): Promise<PlaylistListing> {
+  let stdout: string;
+  try {
+    const result = await execa("yt-dlp", ["--flat-playlist", "--dump-json", url]);
+    stdout = result.stdout;
+  } catch (err) {
+    throw new ProcessError("Failed to fetch playlist", stderrOf(err));
+  }
+
+  const videos: PlaylistVideo[] = [];
+  let skipped = 0;
+  let playlistTitle: string | undefined;
+
+  for (const line of stdout.split("\n")) {
+    if (!line.trim()) continue;
+    let entry: { id?: string; title?: string; availability?: string; playlist_title?: string };
+    try {
+      entry = JSON.parse(line);
+    } catch {
+      skipped++;
+      continue;
+    }
+    if (!playlistTitle && entry.playlist_title) playlistTitle = entry.playlist_title;
+    if (!entry.id || !entry.title || (entry.availability && entry.availability !== "public")) {
+      skipped++;
+      continue;
+    }
+    videos.push({ id: entry.id, title: entry.title });
+  }
+
+  return { playlistTitle, videos, skipped };
+}
+
 /** Downloads + extracts audio to `${outPathNoExt}.m4a`, returning the final path. */
 export async function downloadAudio(url: string, outPathNoExt: string): Promise<string> {
   try {

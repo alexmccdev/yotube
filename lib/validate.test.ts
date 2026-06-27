@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractVideoId, isYoutubeUrl, normalizeYoutubeInput } from "./validate";
+import { extractVideoId, isYoutubePlaylistUrl, isYoutubeUrl, normalizeYoutubeInput } from "./validate";
 
 describe("isYoutubeUrl", () => {
   it("accepts known youtube hosts", () => {
@@ -59,5 +59,27 @@ describe("extractVideoId", () => {
 
   it("returns undefined when the watch url has no v param", () => {
     expect(extractVideoId("https://www.youtube.com/watch")).toBeUndefined();
+  });
+});
+
+describe("isYoutubePlaylistUrl", () => {
+  it("accepts a watch url with a list param and no video id", () => {
+    expect(isYoutubePlaylistUrl("https://www.youtube.com/watch?list=PL123")).toBe(true);
+  });
+
+  it("accepts a /playlist path", () => {
+    expect(isYoutubePlaylistUrl("https://www.youtube.com/playlist?list=PL123")).toBe(true);
+  });
+
+  it("treats a url with both v= and list= as a single video, not a playlist", () => {
+    expect(isYoutubePlaylistUrl("https://www.youtube.com/watch?v=jNQXAC9IVRw&list=PL123")).toBe(
+      false,
+    );
+  });
+
+  it("rejects plain video urls and non-youtube urls", () => {
+    expect(isYoutubePlaylistUrl("https://www.youtube.com/watch?v=jNQXAC9IVRw")).toBe(false);
+    expect(isYoutubePlaylistUrl("https://vimeo.com/12345")).toBe(false);
+    expect(isYoutubePlaylistUrl("not a url")).toBe(false);
   });
 });

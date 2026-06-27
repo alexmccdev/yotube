@@ -9,8 +9,9 @@ const TOKEN_URL = "https://login.yotoplay.com/oauth/token";
 const AUDIENCE = "https://api.yotoplay.com";
 const SCOPES = "user:content:manage user:content:view user:icons:manage offline_access";
 
-const TOKEN_PATH = path.join(process.cwd(), "work", ".yoto-auth.json");
-const CONFIG_PATH = path.join(process.cwd(), "work", ".yoto-config.json");
+const WORK_DIR = process.env.WORK_DIR ?? path.join(process.cwd(), "work");
+const TOKEN_PATH = path.join(WORK_DIR, ".yoto-auth.json");
+const CONFIG_PATH = path.join(WORK_DIR, ".yoto-config.json");
 
 let activeCallbackServer: http.Server | undefined;
 let lastConnectError: string | undefined;

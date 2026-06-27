@@ -17,8 +17,9 @@
 /.next/
 /out/
 
-# production
-/build
+# electron-builder output
+/dist/
+/build/post-commit-install.log
 
 # misc
 .DS_Store

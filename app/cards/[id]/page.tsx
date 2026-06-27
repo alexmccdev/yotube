@@ -13,7 +13,7 @@ import TrackTitleField from "@/app/components/TrackTitleField";
 import { catalogNumber, formatDuration } from "@/lib/format";
 import { getCardStages } from "@/lib/stage";
 import { type TrackStatus } from "@/lib/track-status";
-import { extractVideoId } from "@/lib/validate";
+import { extractVideoId, isYoutubePlaylistUrl } from "@/lib/validate";
 import type { IconCandidate } from "@/lib/yoto-icons";
 
 interface Track {
@@ -53,6 +53,15 @@ export default function CardStatusPage() {
   const [newTrackUrl, setNewTrackUrl] = useState("");
   const [addingTrack, setAddingTrack] = useState(false);
   const [justLinked, setJustLinked] = useState(false);
+  const [playlistLoading, setPlaylistLoading] = useState(false);
+  const [playlistError, setPlaylistError] = useState<string | null>(null);
+  const [playlistPreview, setPlaylistPreview] = useState<{
+    url: string;
+    playlistTitle?: string;
+    videos: { id: string; title: string }[];
+    individualAdded: number;
+  } | null>(null);
+  const [confirmingPlaylist, setConfirmingPlaylist] = useState(false);
   const dragIndex = useRef<number | null>(null);
   const cardRef = useRef<Card | null>(null);
   useEffect(() => {
@@ -80,9 +89,10 @@ export default function CardStatusPage() {
     };
   }, [cardId]);
 
+  const isBlank = (c: Card) =>
+    c.tracks.length === 0 && !c.finalized && !c.coverImageUrl && c.title.trim() === "Untitled card";
+
   useEffect(() => {
-    const isBlank = (c: Card) =>
-      c.tracks.length === 0 && !c.finalized && !c.coverImageUrl && c.title.trim() === "Untitled card";
     const cleanupIfBlank = () => {
       const c = cardRef.current;
       if (c && isBlank(c)) {
@@ -95,6 +105,14 @@ export default function CardStatusPage() {
       cleanupIfBlank();
     };
   }, []);
+
+  const goToLibrary = async () => {
+    const c = cardRef.current;
+    if (c && isBlank(c)) {
+      await fetch(`/api/cards/${c.id}`, { method: "DELETE" });
+    }
+    router.push("/cards");
+  };
 
   if (!card) {
     return (
@@ -141,28 +159,87 @@ export default function CardStatusPage() {
     }
   };
 
+  /** Resolves a playlist URL into a preview list, without creating any tracks yet. */
+  const resolvePlaylist = async (url: string, individualAdded = 0) => {
+    setPlaylistLoading(true);
+    setPlaylistError(null);
+    const res = await fetch(`/api/cards/${cardId}/playlist?url=${encodeURIComponent(url)}`);
+    const body = await res.json();
+    setPlaylistLoading(false);
+    if (!res.ok) {
+      setPlaylistError(body.error ?? "Failed to resolve playlist");
+      return;
+    }
+    setPlaylistPreview({ url, playlistTitle: body.playlistTitle, videos: body.videos, individualAdded });
+  };
+
+  const confirmPlaylist = async () => {
+    if (!playlistPreview) return;
+    setConfirmingPlaylist(true);
+    const res = await fetch(`/api/cards/${cardId}/playlist`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ videos: playlistPreview.videos, playlistTitle: playlistPreview.playlistTitle }),
+    });
+    if (res.ok) {
+      const body = await res.json();
+      setCard((prev) => (prev ? { ...prev, tracks: [...prev.tracks, ...body.added] } : prev));
+      const res2 = await fetch(`/api/cards/${cardId}`);
+      if (res2.ok) setCard(await res2.json());
+    }
+    setConfirmingPlaylist(false);
+    setPlaylistPreview(null);
+  };
+
+  const cancelPlaylist = () => {
+    setPlaylistPreview(null);
+    setPlaylistError(null);
+  };
+
   const addTrack = async () => {
     const url = newTrackUrl.trim();
     if (!url) return;
+    if (isYoutubePlaylistUrl(url)) {
+      setNewTrackUrl("");
+      await resolvePlaylist(url);
+      return;
+    }
     setAddingTrack(true);
     await addTrackUrl(url);
     setNewTrackUrl("");
     setAddingTrack(false);
   };
 
-  /** Pasting a block of several links adds them all at once instead of just the first. */
+  /** Pasting a block of several links adds plain links right away; a playlist link among
+   *  them goes through the preview/confirm step since it can expand into many tracks. */
   const handleAddTrackPaste = async (e: React.ClipboardEvent<HTMLInputElement>) => {
     const pasted = e.clipboardData.getData("text");
     const candidates = pasted.split(/[\n,]+/).map((s) => s.trim()).filter(Boolean);
+    const playlistUrls = candidates.filter(isYoutubePlaylistUrl);
     const ids = candidates.map(extractVideoId).filter((id): id is string => Boolean(id));
-    if (ids.length < 2) return;
-    e.preventDefault();
-    setAddingTrack(true);
-    for (const id of ids) {
-      await addTrackUrl(`https://www.youtube.com/watch?v=${id}`);
+
+    if (playlistUrls.length === 0) {
+      if (ids.length < 2) return;
+      e.preventDefault();
+      setAddingTrack(true);
+      for (const id of ids) {
+        await addTrackUrl(`https://www.youtube.com/watch?v=${id}`);
+      }
+      setNewTrackUrl("");
+      setAddingTrack(false);
+      return;
     }
+
+    e.preventDefault();
     setNewTrackUrl("");
-    setAddingTrack(false);
+    if (ids.length > 0) {
+      setAddingTrack(true);
+      for (const id of ids) {
+        await addTrackUrl(`https://www.youtube.com/watch?v=${id}`);
+      }
+      setAddingTrack(false);
+    }
+    await resolvePlaylist(playlistUrls[0], ids.length);
   };
 
   const removeTrack = async (trackId: string) => {
@@ -316,12 +393,13 @@ export default function CardStatusPage() {
   return (
     <main className="mx-auto max-w-2xl w-full p-6 sm:p-10 flex flex-col gap-6 file-in">
       <div className="flex items-center justify-between">
-        <Link
-          href="/cards"
+        <button
+          type="button"
+          onClick={goToLibrary}
           className="press font-mono text-xs uppercase tracking-wider text-paper/70 hover:text-brass transition-colors inline-block"
         >
           ← Library
-        </Link>
+        </button>
         <button
           type="button"
           disabled={deleting}
@@ -454,7 +532,7 @@ export default function CardStatusPage() {
             <div className="flex flex-col gap-1.5">
               {card.tracks.length === 0 && (
                 <p className="text-sm text-ink-text/50">
-                  Paste a YouTube link or video ID — drop in several at once, one per line.
+                  Paste a YouTube link, video ID, or playlist URL — drop in several at once, one per line.
                 </p>
               )}
               <div className="flex items-center gap-2">
@@ -481,6 +559,44 @@ export default function CardStatusPage() {
                   )}
                 </button>
               </div>
+              {playlistLoading && (
+                <LoadingDots label="Looking up playlist" className="font-mono text-xs text-ink-text/50" />
+              )}
+              {playlistError && <p className="text-sm text-red-700">{playlistError}</p>}
+              {playlistPreview && (
+                <div className="flex flex-col gap-2 border border-brass/40 rounded-sm px-3 py-2.5 bg-brass/5">
+                  <p className="text-sm text-ink-text">
+                    {playlistPreview.individualAdded > 0 && (
+                      <>+{playlistPreview.individualAdded} individual track
+                        {playlistPreview.individualAdded === 1 ? "" : "s"}, </>
+                    )}
+                    +{playlistPreview.videos.length} from
+                    {playlistPreview.playlistTitle ? ` "${playlistPreview.playlistTitle}"` : " playlist"}
+                  </p>
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      disabled={confirmingPlaylist}
+                      onClick={confirmPlaylist}
+                      className="press font-mono text-xs uppercase tracking-wider bg-ink text-paper px-3 py-1.5 rounded-sm hover:bg-brass hover:text-ink-text transition-colors disabled:opacity-50"
+                    >
+                      {confirmingPlaylist ? (
+                        <LoadingDots label="Adding" className="font-mono text-xs text-paper" />
+                      ) : (
+                        "Add all"
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={confirmingPlaylist}
+                      onClick={cancelPlaylist}
+                      className="press font-mono text-xs uppercase tracking-wider text-ink-text/50 hover:text-red-700 transition-colors disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

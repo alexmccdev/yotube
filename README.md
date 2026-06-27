@@ -23,7 +23,7 @@ Next.js (App Router) + TypeScript + Tailwind v4. Plain route handlers under `app
 - [lib/yoto-api.ts](lib/yoto-api.ts) — uploads tracks to Yoto (presigned URL → PUT → poll transcode), then creates the card via `POST /content`.
 - [lib/validate.ts](lib/validate.ts) — YouTube URL/ID parsing.
 - [lib/format.ts](lib/format.ts) — duration formatting, cosmetic catalog numbers.
-- Routes: [app/page.tsx](app/page.tsx) (new card), [app/cards/page.tsx](app/cards/page.tsx) (library list), [app/cards/[id]/page.tsx](app/cards/[id]/page.tsx) (card detail — reorder/rename/retry/finalize/push), `app/api/cards/...` (REST), `app/api/yoto/...` (connect/status).
+- Routes: [app/new-card/page.tsx](app/new-card/page.tsx) (new card), [app/cards/page.tsx](app/cards/page.tsx) (library list), [app/cards/[id]/page.tsx](app/cards/[id]/page.tsx) (card detail — reorder/rename/retry/finalize/push), `app/api/cards/...` (REST), `app/api/yoto/...` (connect/status).
 
 ## Yoto integration
 
@@ -45,3 +45,13 @@ Once connected, any finalized card shows a "Push to Yoto" button. On success it 
 - `npm run dev` runs on port 3000; Next refuses a second instance per project directory.
 - After adding new `app/api/.../route.ts` files, run `rm -rf .next && npx next typegen` before `tsc --noEmit` to avoid phantom `RouteContext` errors.
 - Verification pattern: `npx tsc --noEmit` + `npx eslint .` (both clean) + a live functional check against the running dev server.
+
+## Electron app
+
+`npm run electron` runs the packaged-style app against the dev build; `npm run electron:dist` builds and packages it via `electron-builder` into `dist/`. On macOS, app data lives under `~/Library/Application Support/Yotube/` (see [electron/main.js](electron/main.js)) — separate from the repo's `work/`/`cards/` dirs used by `npm run dev`, and untouched by reinstalling the app.
+
+Two local-build quirks this repo works around:
+- electron-builder skips code signing without a paid Developer ID cert, which leaves the `.app` with a stale signature that fails to launch on Apple Silicon. [build/afterSign.js](build/afterSign.js) ad-hoc re-signs it after every build.
+- Homebrew's `python3` pyexpat is linked against a libexpat newer than macOS ships, which breaks dmg-builder. [build/python3-dmg-wrapper.sh](build/python3-dmg-wrapper.sh) (used by `electron:build`/`electron:dist` via `PYTHON_PATH`) points it at Homebrew's own `expat` lib instead.
+
+Run `build/install-hooks.sh` once to enable a `post-commit` git hook that rebuilds and reinstalls `/Applications/Yotube.app` in the background after every commit (zip target only, skips the slower DMG step). Logs to `build/post-commit-install.log`.

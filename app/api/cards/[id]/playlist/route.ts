@@ -1,5 +1,5 @@
 import { addTracksBatch, getCard, renameCard } from "@/lib/jobs";
-import { isYoutubePlaylistUrl } from "@/lib/validate";
+import { canonicalPlaylistUrl, isYoutubePlaylistUrl } from "@/lib/validate";
 import { fetchPlaylistVideoIds, ProcessError } from "@/lib/ytdlp";
 
 /** Resolves a playlist URL for the preview/confirm step, without creating any tracks. */
@@ -14,7 +14,7 @@ export async function GET(request: Request, ctx: RouteContext<"/api/cards/[id]/p
   }
 
   try {
-    const { playlistTitle, videos, skipped } = await fetchPlaylistVideoIds(url);
+    const { playlistTitle, videos, skipped } = await fetchPlaylistVideoIds(canonicalPlaylistUrl(url) ?? url);
     return Response.json({ playlistTitle, videos, count: videos.length, skipped });
   } catch (err) {
     const message = err instanceof ProcessError ? `${err.message}: ${err.stderr}` : String(err);

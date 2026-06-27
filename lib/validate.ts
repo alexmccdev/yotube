@@ -29,21 +29,36 @@ export function normalizeYoutubeInput(value: string): string | undefined {
 }
 
 /**
- * A URL counts as a playlist link if it has a `list=` param (and no `v=` param — a URL
- * with both is a single video played from within a playlist, which yt-dlp treats as the
- * video alone, and we match that to avoid surprising single-video pastes).
+ * A URL counts as a playlist link if it has a `list=` param, even when a `v=` param is
+ * also present — that's the common case of copying the address bar URL while watching the
+ * first video of a playlist. The exception is auto-generated Mix/Radio lists (`list=RD...`),
+ * which YouTube can't list independently of the seed video, so those stay single-video adds.
  */
 export function isYoutubePlaylistUrl(value: string): boolean {
   const trimmed = value.trim();
   if (!isYoutubeUrl(trimmed)) return false;
   try {
     const url = new URL(trimmed);
+    const list = url.searchParams.get("list");
+    if (list) return !list.startsWith("RD");
     if (url.searchParams.get("v")) return false;
-    if (url.searchParams.get("list")) return true;
     return url.pathname.startsWith("/playlist");
   } catch {
     return false;
   }
+}
+
+/**
+ * Extracts the canonical `https://www.youtube.com/playlist?list=...` URL from any playlist
+ * link. yt-dlp's playlist-tab extractor doesn't reliably resolve a `watch?v=...&list=...`
+ * URL (it sometimes decides the video isn't part of the playlist and falls back to a single
+ * video), but it always resolves the bare `/playlist?list=...` form, so callers should pass
+ * that to yt-dlp instead of the original URL.
+ */
+export function canonicalPlaylistUrl(value: string): string | undefined {
+  if (!isYoutubePlaylistUrl(value)) return undefined;
+  const list = new URL(value.trim()).searchParams.get("list");
+  return list ? `https://www.youtube.com/playlist?list=${list}` : undefined;
 }
 
 /** Extracts the 11-char video ID from a YouTube URL or bare ID, for dedupe comparisons. */

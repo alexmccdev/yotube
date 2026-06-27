@@ -18,7 +18,7 @@ export default function NewCardPage() {
     })
       .then((res) => res.json())
       .then((card) => router.replace(`/cards/${card.id}`))
-      .catch(() => router.replace("/cards"));
+      .catch(() => router.replace("/"));
   }, [router]);
 
   return (

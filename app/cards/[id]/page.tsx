@@ -111,14 +111,14 @@ export default function CardStatusPage() {
     if (c && isBlank(c)) {
       await fetch(`/api/cards/${c.id}`, { method: "DELETE" });
     }
-    router.push("/cards");
+    router.push("/");
   };
 
   if (!card) {
     return (
       <main className="mx-auto max-w-2xl w-full p-6 sm:p-10 flex flex-col gap-6">
         <Link
-          href="/cards"
+          href="/"
           className="font-mono text-xs uppercase tracking-wider text-paper/70 hover:text-brass self-start transition-colors"
         >
           ← Library
@@ -387,7 +387,7 @@ export default function CardStatusPage() {
     if (!window.confirm(`Delete "${card.title}"? This can't be undone.`)) return;
     setDeleting(true);
     await fetch(`/api/cards/${cardId}`, { method: "DELETE" });
-    router.push("/cards");
+    router.push("/");
   };
 
   return (

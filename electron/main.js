@@ -48,7 +48,7 @@ function createWindow() {
       nodeIntegration: false,
     },
   });
-  win.loadURL(`http://127.0.0.1:${PORT}/cards`);
+  win.loadURL(`http://127.0.0.1:${PORT}/`);
 }
 
 app.whenReady().then(async () => {

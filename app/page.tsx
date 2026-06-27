@@ -59,7 +59,7 @@ function currentStep(card: Card): Exclude<StepFilter, "all"> {
   return "editing";
 }
 
-export default function CardsListPage() {
+export default function LibraryPage() {
   const [cards, setCards] = useState<Card[] | null>(null);
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortOption>("created-desc");
@@ -102,7 +102,7 @@ export default function CardsListPage() {
   return (
     <main className="mx-auto max-w-2xl w-full p-6 sm:p-10 flex flex-col gap-6 file-in">
       <div className="flex items-center justify-between gap-4">
-        <h1 className="font-display text-2xl font-semibold text-paper">Library</h1>
+        <h1 className="font-display text-2xl font-semibold text-paper">yotube</h1>
         <div className="flex items-center gap-3 shrink-0">
           <YotoConnectStatus />
           <Link

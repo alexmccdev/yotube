@@ -78,7 +78,7 @@ export default function SettingsPage() {
       <div className="flex items-center justify-between">
         <h1 className="font-display text-2xl font-semibold text-paper">Settings</h1>
         <Link
-          href="/cards"
+          href="/"
           className="press font-mono text-xs uppercase tracking-wider text-paper/70 hover:text-brass transition-colors inline-block"
         >
           ← Library

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { extractVideoId, isYoutubePlaylistUrl, isYoutubeUrl, normalizeYoutubeInput } from "./validate";
+import {
+  canonicalPlaylistUrl,
+  extractVideoId,
+  isYoutubePlaylistUrl,
+  isYoutubeUrl,
+  normalizeYoutubeInput,
+} from "./validate";
 
 describe("isYoutubeUrl", () => {
   it("accepts known youtube hosts", () => {
@@ -71,15 +77,39 @@ describe("isYoutubePlaylistUrl", () => {
     expect(isYoutubePlaylistUrl("https://www.youtube.com/playlist?list=PL123")).toBe(true);
   });
 
-  it("treats a url with both v= and list= as a single video, not a playlist", () => {
+  it("accepts a url with both v= and list= as a playlist (copied from a playing video)", () => {
     expect(isYoutubePlaylistUrl("https://www.youtube.com/watch?v=jNQXAC9IVRw&list=PL123")).toBe(
-      false,
+      true,
     );
+  });
+
+  it("treats an auto-generated Mix/Radio list as a single video, not a playlist", () => {
+    expect(
+      isYoutubePlaylistUrl("https://www.youtube.com/watch?v=jNQXAC9IVRw&list=RDjNQXAC9IVRw"),
+    ).toBe(false);
   });
 
   it("rejects plain video urls and non-youtube urls", () => {
     expect(isYoutubePlaylistUrl("https://www.youtube.com/watch?v=jNQXAC9IVRw")).toBe(false);
     expect(isYoutubePlaylistUrl("https://vimeo.com/12345")).toBe(false);
     expect(isYoutubePlaylistUrl("not a url")).toBe(false);
+  });
+});
+
+describe("canonicalPlaylistUrl", () => {
+  it("strips v= and other params, keeping only the bare playlist form", () => {
+    expect(
+      canonicalPlaylistUrl("https://www.youtube.com/watch?v=jNQXAC9IVRw&list=PL123&pp=sAgC"),
+    ).toBe("https://www.youtube.com/playlist?list=PL123");
+  });
+
+  it("passes through an already-bare playlist url unchanged", () => {
+    expect(canonicalPlaylistUrl("https://www.youtube.com/playlist?list=PL123")).toBe(
+      "https://www.youtube.com/playlist?list=PL123",
+    );
+  });
+
+  it("returns undefined for non-playlist urls", () => {
+    expect(canonicalPlaylistUrl("https://www.youtube.com/watch?v=jNQXAC9IVRw")).toBeUndefined();
   });
 });

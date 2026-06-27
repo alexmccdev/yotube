@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { IconCandidate } from "@/lib/yoto-icons";
 
 export default function TrackIcon({
@@ -14,7 +14,9 @@ export default function TrackIcon({
   onSelect: (candidate: IconCandidate) => Promise<void>;
   editable?: boolean;
 }) {
+  const buttonRef = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
+  const [position, setPosition] = useState({ top: 0, left: 0 });
   const [loading, setLoading] = useState(false);
   const [selecting, setSelecting] = useState(false);
   const [keyword, setKeyword] = useState("");
@@ -35,10 +37,23 @@ export default function TrackIcon({
       setOpen(false);
       return;
     }
+    const rect = buttonRef.current?.getBoundingClientRect();
+    if (rect) setPosition({ top: rect.bottom + 4, left: rect.left });
     setOpen(true);
     setKeyword("");
     await search();
   };
+
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    return () => {
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+    };
+  }, [open]);
 
   const pick = async (candidate: IconCandidate) => {
     setSelecting(true);
@@ -53,6 +68,7 @@ export default function TrackIcon({
   return (
     <div className="relative shrink-0">
       <button
+        ref={buttonRef}
         type="button"
         onClick={togglePicker}
         disabled={!editable}
@@ -67,7 +83,10 @@ export default function TrackIcon({
       </button>
 
       {open && (
-        <div className="pop-in absolute z-10 top-full left-0 mt-1 w-56 bg-paper text-ink-text border border-ink-text/15 rounded-sm shadow-xl p-2 flex flex-col gap-2" style={{ transformOrigin: "top left" }}>
+        <div
+          className="pop-in fixed z-50 w-56 bg-paper text-ink-text border border-ink-text/15 rounded-sm shadow-xl p-2 flex flex-col gap-2"
+          style={{ top: position.top, left: position.left, transformOrigin: "top left" }}
+        >
           <div className="flex items-center gap-1">
             <input
               autoFocus

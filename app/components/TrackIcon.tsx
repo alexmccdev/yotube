@@ -8,13 +8,18 @@ export default function TrackIcon({
   onFetchCandidates,
   onSelect,
   editable = true,
+  open,
+  onOpenChange,
 }: {
   iconUrl?: string;
   onFetchCandidates: (keyword?: string) => Promise<IconCandidate[]>;
   onSelect: (candidate: IconCandidate) => Promise<void>;
   editable?: boolean;
+  /** Whether this track's picker is the one currently open — only one can be open at a time, so the parent owns this. */
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const setOpen = onOpenChange;
   const [loading, setLoading] = useState(false);
   const [selecting, setSelecting] = useState(false);
   const [keyword, setKeyword] = useState("");
@@ -51,13 +56,13 @@ export default function TrackIcon({
   };
 
   return (
-    <div className="relative shrink-0">
+    <div className={`relative shrink-0 ${open ? "z-[999]" : ""}`}>
       <button
         type="button"
         onClick={togglePicker}
         disabled={!editable}
         title={!editable ? undefined : iconUrl ? "Click to change icon" : "Click to find an icon"}
-        className="press w-8 h-8 shrink-0 rounded-sm border border-ink-text/15 bg-ink-text/5 flex items-center justify-center hover:border-brass transition-colors disabled:opacity-50 disabled:hover:border-ink-text/15 overflow-hidden"
+        className={`press w-8 h-8 shrink-0 rounded-sm border border-ink-text/15 bg-ink-text/5 flex items-center justify-center hover:border-brass transition-colors disabled:opacity-50 disabled:hover:border-ink-text/15 overflow-hidden ${open ? "z-[999]" : ""}`}
       >
         {iconUrl ? (
           <img src={iconUrl} alt="" className="w-full h-full" style={{ imageRendering: "pixelated" }} />
@@ -67,7 +72,7 @@ export default function TrackIcon({
       </button>
 
       {open && (
-        <div className="pop-in absolute z-10 top-full left-0 mt-1 w-56 bg-paper text-ink-text border border-ink-text/15 rounded-sm shadow-xl p-2 flex flex-col gap-2" style={{ transformOrigin: "top left" }}>
+        <div className="pop-in absolute z-[999] top-full left-0 mt-1 w-56 bg-paper text-ink-text border border-ink-text/15 rounded-sm shadow-xl p-2 flex flex-col gap-2" style={{ transformOrigin: "top left" }}>
           <div className="flex items-center gap-1">
             <input
               autoFocus

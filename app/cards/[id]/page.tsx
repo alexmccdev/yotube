@@ -62,6 +62,7 @@ export default function CardStatusPage() {
     individualAdded: number;
   } | null>(null);
   const [confirmingPlaylist, setConfirmingPlaylist] = useState(false);
+  const [openIconTrackId, setOpenIconTrackId] = useState<string | null>(null);
   const dragIndex = useRef<number | null>(null);
   const cardRef = useRef<Card | null>(null);
   useEffect(() => {
@@ -410,7 +411,7 @@ export default function CardStatusPage() {
         </button>
       </div>
 
-      <div className="bg-paper text-ink-text rounded-sm shadow-xl shadow-black/30 overflow-hidden">
+      <div className="bg-paper text-ink-text rounded-sm shadow-xl shadow-black/30 overflow-visible">
         <div className="border-l-4 border-brass px-6 sm:px-8 pt-6 pb-7 flex flex-col gap-6">
           <div className="flex flex-col gap-4">
             <div className="flex items-start gap-4">
@@ -469,7 +470,9 @@ export default function CardStatusPage() {
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={() => onDrop(index)}
                 style={{ animationDelay: `${Math.min(index, 10) * 30}ms` }}
-                className={`file-in py-2.5 flex flex-col gap-1 ${locked ? "" : "cursor-move"}`}
+                className={`file-in relative py-2.5 flex flex-col gap-1 ${locked ? "" : "cursor-move"} ${
+                  openIconTrackId === track.id ? "z-[999]" : ""
+                }`}
               >
                 <div className="flex items-center gap-3">
                   <span className="font-mono text-xs text-ink-text/40 w-10 shrink-0 tabular-nums">
@@ -480,6 +483,8 @@ export default function CardStatusPage() {
                     onFetchCandidates={(keyword) => fetchIconCandidates(track.id, keyword)}
                     onSelect={(candidate) => selectIcon(track.id, candidate)}
                     editable={!locked}
+                    open={openIconTrackId === track.id}
+                    onOpenChange={(open) => setOpenIconTrackId(open ? track.id : null)}
                   />
                   <TrackTitleField
                     title={track.title}

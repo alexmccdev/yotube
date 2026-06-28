@@ -103,16 +103,12 @@ export async function downloadAudio(url: string, outPathNoExt: string): Promise<
   return `${outPathNoExt}.m4a`;
 }
 
-/** Leading/trailing silence trim + loudness normalization, applied uniformly so tracks
- *  pulled from different sources don't vary wildly in level when played back to back. */
-const AUDIO_FILTER = [
-  "silenceremove=start_periods=1:start_threshold=-50dB:start_silence=0.1",
-  "silenceremove=stop_periods=1:stop_threshold=-50dB:stop_silence=0.1",
-  "loudnorm=I=-16:TP=-1.5:LRA=11",
-].join(",");
+/** Loudness normalization, applied uniformly so tracks pulled from different sources
+ *  don't vary wildly in level when played back to back. */
+const AUDIO_FILTER = "loudnorm=I=-16:TP=-1.5:LRA=11";
 
-/** Trims silence, normalizes loudness, and tags the audio. Re-encodes (the silence/loudness
- *  filters require it) so the returned duration reflects the actual trimmed output. */
+/** Normalizes loudness and tags the audio. Re-encodes (the loudnorm filter requires it)
+ *  so the returned duration reflects the actual output. */
 export async function tagAndCopy(
   inputPath: string,
   outputPath: string,

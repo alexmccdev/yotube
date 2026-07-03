@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Fraunces, IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
+import DependencyBanner from "@/app/components/DependencyBanner";
 import "./globals.css";
 
 const fraunces = Fraunces({
@@ -35,7 +36,10 @@ export default function RootLayout({
       lang="en"
       className={`${fraunces.variable} ${plexSans.variable} ${plexMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        <DependencyBanner />
+        {children}
+      </body>
     </html>
   );
 }

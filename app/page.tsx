@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import GearIcon from "@/app/components/GearIcon";
+import GettingStarted from "@/app/components/GettingStarted";
+import Hint from "@/app/components/Hint";
 import LoadingDots from "@/app/components/LoadingDots";
 import TickerTitle from "@/app/components/TickerTitle";
 import YotoConnectStatus from "@/app/components/YotoConnectStatus";
@@ -72,7 +74,7 @@ export default function LibraryPage() {
       if (!cancelled && res.ok) setCards(await res.json());
     };
     poll();
-    const interval = setInterval(poll, 3000);
+    const interval = setInterval(poll, 5000);
     return () => {
       cancelled = true;
       clearInterval(interval);
@@ -116,6 +118,8 @@ export default function LibraryPage() {
         </div>
       </div>
 
+      <GettingStarted />
+
       {cards !== null && cards.length > 0 && (
         <div className="flex items-center gap-4">
           <input
@@ -149,9 +153,14 @@ export default function LibraryPage() {
 
       {cards === null && <LoadingDots label="Pulling the catalog…" />}
       {cards?.length === 0 && (
-        <p className="font-mono text-sm text-paper/50">
-          No cards yet — create one to get started.
-        </p>
+        <div className="flex flex-col gap-3">
+          <p className="font-mono text-sm text-paper/50">
+            No cards yet — create one to get started.
+          </p>
+          <Hint hintKey="library-empty-state">
+            Paste a YouTube link on the next screen — video, playlist, or several links at once.
+          </Hint>
+        </div>
       )}
       {cards && cards.length > 0 && filteredCards.length === 0 && (
         <p className="font-mono text-sm text-paper/50">

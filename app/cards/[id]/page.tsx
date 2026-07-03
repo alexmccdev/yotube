@@ -5,11 +5,13 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import BrassBurst from "@/app/components/BrassBurst";
 import CoverImageField from "@/app/components/CoverImageField";
+import Hint from "@/app/components/Hint";
 import LoadingDots from "@/app/components/LoadingDots";
 import StageRail from "@/app/components/StageRail";
 import StatusPill from "@/app/components/StatusPill";
 import TrackIcon from "@/app/components/TrackIcon";
 import TrackTitleField from "@/app/components/TrackTitleField";
+import { useYotoStatus } from "@/app/components/useYotoStatus";
 import { catalogNumber, formatDuration } from "@/lib/format";
 import { getCardStages } from "@/lib/stage";
 import { type TrackStatus } from "@/lib/track-status";
@@ -46,7 +48,7 @@ export default function CardStatusPage() {
   const [finalizing, setFinalizing] = useState(false);
   const [finalizeError, setFinalizeError] = useState<string | null>(null);
   const [unstaging, setUnstaging] = useState(false);
-  const [yotoConnected, setYotoConnected] = useState<boolean | null>(null);
+  const { connected: yotoConnected } = useYotoStatus();
   const [deleting, setDeleting] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
@@ -69,21 +71,22 @@ export default function CardStatusPage() {
     cardRef.current = card;
   }, [card]);
 
-  useEffect(() => {
-    fetch("/api/yoto/status")
-      .then((res) => res.json())
-      .then((body) => setYotoConnected(body.connected))
-      .catch(() => setYotoConnected(false));
-  }, []);
+  // The push-to-Yoto request takes a moment to land server-side; without this, a poll
+  // in flight when the button is clicked can overwrite the optimistic pushingToYoto=true
+  // with stale (not-yet-pushing) server data, briefly re-enabling the button.
+  const pushingRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
     const poll = async () => {
       const res = await fetch(`/api/cards/${cardId}`);
-      if (!cancelled && res.ok) setCard(await res.json());
+      if (cancelled || !res.ok) return;
+      const fresh = await res.json();
+      if (pushingRef.current) fresh.pushingToYoto = true;
+      setCard(fresh);
     };
     poll();
-    const interval = setInterval(poll, 1500);
+    const interval = setInterval(poll, 2500);
     return () => {
       cancelled = true;
       clearInterval(interval);
@@ -339,9 +342,12 @@ export default function CardStatusPage() {
   };
 
   const pushToYoto = async () => {
+    if (pushingRef.current) return;
+    pushingRef.current = true;
     setCard((prev) => (prev ? { ...prev, pushingToYoto: true, pushError: undefined } : prev));
     const res = await fetch(`/api/cards/${cardId}/push-to-yoto`, { method: "POST" });
     const body = await res.json();
+    pushingRef.current = false;
     if (!res.ok) {
       setCard((prev) =>
         prev ? { ...prev, pushingToYoto: false, pushError: body.error ?? "Failed to push to Yoto" } : prev,
@@ -540,6 +546,9 @@ export default function CardStatusPage() {
                   Paste a YouTube link, video ID, or playlist URL — drop in several at once, one per line.
                 </p>
               )}
+              <Hint hintKey="track-url-input">
+                Paste a playlist URL to add every video at once — you&apos;ll get a preview to confirm first.
+              </Hint>
               <div className="flex items-center gap-2">
                 <input
                   className="flex-1 border-b border-ink-text/15 focus:border-brass outline-none bg-transparent py-1 placeholder:text-ink-text/30 transition-colors"
@@ -664,6 +673,11 @@ export default function CardStatusPage() {
             </div>
           ) : (
             <div className="flex flex-col gap-1.5">
+              {allReady && (
+                <Hint hintKey="finalize-stage">
+                  Staging locks the card and packages every track for Yoto — you can unstage later to keep editing.
+                </Hint>
+              )}
               <button
                 type="button"
                 disabled={!allReady || finalizing}

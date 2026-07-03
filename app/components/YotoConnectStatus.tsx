@@ -1,62 +1,14 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import LoadingDots from "@/app/components/LoadingDots";
+import { useYotoConnect } from "@/app/components/useYotoConnect";
+import { useYotoStatus } from "@/app/components/useYotoStatus";
 
 export default function YotoConnectStatus() {
-  const [connected, setConnected] = useState<boolean | null>(null);
-  const [connecting, setConnecting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { connected, setConnected } = useYotoStatus();
   const [menuOpen, setMenuOpen] = useState(false);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  useEffect(() => {
-    fetch("/api/yoto/status")
-      .then((res) => res.json())
-      .then((body) => setConnected(body.connected))
-      .catch(() => setConnected(false));
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-    };
-  }, []);
-
-  const connect = async () => {
-    setConnecting(true);
-    setError(null);
-    const res = await fetch("/api/yoto/connect", { method: "POST" });
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      setConnecting(false);
-      setError(body.error ?? "Failed to connect");
-      return;
-    }
-
-    window.open(body.authorizeUrl, "_blank");
-
-    let attempts = 0;
-    pollRef.current = setInterval(async () => {
-      attempts += 1;
-      const statusRes = await fetch("/api/yoto/status");
-      const statusBody = await statusRes.json().catch(() => ({}));
-      if (statusBody.connected) {
-        if (pollRef.current) clearInterval(pollRef.current);
-        setConnecting(false);
-        setConnected(true);
-        return;
-      }
-      if (statusBody.error) {
-        if (pollRef.current) clearInterval(pollRef.current);
-        setConnecting(false);
-        setError(statusBody.error);
-        return;
-      }
-      if (attempts > 80) {
-        if (pollRef.current) clearInterval(pollRef.current);
-        setConnecting(false);
-        setError("Timed out waiting for Yoto login");
-      }
-    }, 1500);
-  };
+  const { connect, connecting, error } = useYotoConnect(() => setConnected(true));
 
   const disconnectAccount = async () => {
     setMenuOpen(false);

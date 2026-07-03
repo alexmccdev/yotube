@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A local, single-user Next.js app that rips YouTube audio via `yt-dlp`/`ffmpeg`, organizes it into Yoto-card-ready MP3s with ID3 tags, and pushes finished cards straight into the user's Yoto account. No database — card/track state lives in `work/<card-id>/state.json` (JSON file is the source of truth; the in-memory `Map` in [lib/jobs.ts](lib/jobs.ts) is just a read cache that survives dev-server reloads).
+A local, single-user Next.js app that rips YouTube audio via `yt-dlp`/`ffmpeg`, organizes it into Yoto-card-ready `.m4a` tracks (loudness-normalized, 64kbps AAC — no ID3 tagging, Yoto gets titles from the JSON payload instead), and pushes finished cards straight into the user's Yoto account. No database — card/track state lives in `work/<card-id>/state.json` (JSON file is the source of truth; the in-memory `Map` in [lib/jobs.ts](lib/jobs.ts) is just a read cache that survives dev-server reloads).
 
 ## Commands
 
@@ -35,6 +35,7 @@ Plain route handlers under `app/api/` (no Hono — tried it, removed it, not wor
 - [lib/validate.ts](lib/validate.ts) — YouTube URL/ID parsing.
 - [lib/format.ts](lib/format.ts) — duration formatting, cosmetic catalog numbers.
 - [lib/track-status.ts](lib/track-status.ts) — the `TrackStatus` union shared across jobs/stage/UI.
+- [lib/onboarding.ts](lib/onboarding.ts) — versioned localStorage read/write (`yotube:onboarding:v1`) for onboarding-hint view counts.
 - Routes: [app/new-card/page.tsx](app/new-card/page.tsx) (new card), [app/cards/page.tsx](app/cards/page.tsx) (library list), [app/cards/[id]/page.tsx](app/cards/[id]/page.tsx) (card detail — reorder/rename/retry/finalize/push), `app/api/cards/...` (REST), `app/api/yoto/...` (connect/status).
 
 ### Card lifecycle
@@ -44,6 +45,17 @@ Card states: draft (`finalized: false`) → tracks download through `queued → 
 ### Yoto integration
 
 Uses Yoto's official developer API ([yoto.dev/api](https://yoto.dev/api/)). Auth is account-level, not per-card — connected once from the header (red/green dot indicates status). Client is registered at [dashboard.yoto.dev](https://dashboard.yoto.dev/) with `YOTO_CLIENT_ID` in `.env.local` (gitignored) and callback URL `http://127.0.0.1:8787/callback`.
+
+### Onboarding
+
+First-time-user guidance is progressive, not a wizard/modal, and needs no new API routes — it reads the three status signals that already existed (`GET /api/health` → `{ ytDlpOk, ffmpegOk }`, `GET /api/settings` → `{ clientId }`, `GET /api/yoto/status` → `{ connected, error }`).
+
+- [app/components/GettingStarted.tsx](app/components/GettingStarted.tsx) — banner on the library home (`/`) with three live steps (deps ready / client ID set / Yoto connected). Polls health+settings every 3s; auto-hides once all three are true (no dismiss state to track).
+- [app/components/DependencyBanner.tsx](app/components/DependencyBanner.tsx) — global, mounted in [app/layout.tsx](app/layout.tsx); independent of the checklist, warns (doesn't block) when `yt-dlp`/`ffmpeg` is missing from `$PATH`. Session-dismissible via `sessionStorage`.
+- [app/components/useYotoStatus.ts](app/components/useYotoStatus.ts) — single module-level store polling `/api/yoto/status` every 3s, shared via `useSyncExternalStore` by the header pill, the checklist, and the card detail page. Without this, connecting from one of them wouldn't be reflected in the others without a page reload — each used to poll independently.
+- [app/components/useYotoConnect.ts](app/components/useYotoConnect.ts) — OAuth connect/poll flow, shared by the header widget and the checklist's "Connect Yoto" step.
+- [app/components/Hint.tsx](app/components/Hint.tsx) — contextual tips capped at `maxViews` (default 3) per `hintKey`, tracked in `lib/onboarding.ts`'s localStorage state. This is the "less guidance as the user gains experience" mechanism. Placed near the URL input and finalize button in the card editor, and the library empty state.
+- [app/components/useOnboarding.ts](app/components/useOnboarding.ts) — `useMounted()`/`useOnboardingState()` built on `useSyncExternalStore` against `lib/onboarding.ts`, rather than `useState`+`useEffect`, to satisfy the `react-hooks/set-state-in-effect` lint rule and avoid SSR hydration mismatches in one move.
 
 ## Design system
 

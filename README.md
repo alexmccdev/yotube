@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="build/icon.png" alt="Yotube" width="160">
+</p>
+
 # Yotube
 
 A local, single-user Next.js app that rips YouTube audio via `yt-dlp`/`ffmpeg`, organizes it into Yoto-card-ready `.m4a` tracks, and pushes finished cards straight into your Yoto account.

@@ -17,6 +17,10 @@ export function isYoutubeUrl(value: string): boolean {
 
 const VIDEO_ID_PATTERN = /^[A-Za-z0-9_-]{11}$/;
 
+export function isValidVideoId(value: string): boolean {
+  return VIDEO_ID_PATTERN.test(value);
+}
+
 /**
  * Accepts either a full YouTube URL or a bare 11-char video ID (the part
  * after `v=`) and returns a canonical watch URL, or undefined if neither matches.

@@ -26,7 +26,11 @@ describe("fetchMetadata", () => {
 
     const meta = await fetchMetadata("https://youtu.be/abc");
     expect(meta).toEqual({ title: "A Song", duration: 123, thumbnail: "https://thumb" });
-    expect(execaMock).toHaveBeenCalledWith("yt-dlp", ["--dump-json", "--no-playlist", "https://youtu.be/abc"]);
+    expect(execaMock).toHaveBeenCalledWith(
+      "yt-dlp",
+      ["--dump-json", "--no-playlist", "https://youtu.be/abc"],
+      expect.objectContaining({ timeout: expect.any(Number) }),
+    );
   });
 
   it("wraps a failure as ProcessError with the process's stderr", async () => {
@@ -49,12 +53,18 @@ describe("fetchMetadata", () => {
 
 describe("downloadAudio", () => {
   it("returns the .m4a output path on success", async () => {
-    execaMock.mockResolvedValueOnce({} as never);
+    execaMock.mockResolvedValue({} as never);
     const result = await downloadAudio("https://youtu.be/abc", "/tmp/card/track1");
     expect(result).toBe("/tmp/card/track1.m4a");
     expect(execaMock).toHaveBeenCalledWith(
       "yt-dlp",
       expect.arrayContaining(["-x", "--audio-format", "m4a", "https://youtu.be/abc"]),
+      expect.objectContaining({ timeout: expect.any(Number) }),
+    );
+    expect(execaMock).toHaveBeenCalledWith(
+      "ffmpeg",
+      expect.arrayContaining(["-i", "/tmp/card/track1.raw.m4a", "-af", expect.stringContaining("loudnorm")]),
+      expect.objectContaining({ timeout: expect.any(Number) }),
     );
   });
 
@@ -81,11 +91,11 @@ describe("fetchPlaylistVideoIds", () => {
       ],
       skipped: 0,
     });
-    expect(execaMock).toHaveBeenCalledWith("yt-dlp", [
-      "--flat-playlist",
-      "--dump-json",
-      "https://www.youtube.com/playlist?list=PL1",
-    ]);
+    expect(execaMock).toHaveBeenCalledWith(
+      "yt-dlp",
+      ["--flat-playlist", "--dump-json", "https://www.youtube.com/playlist?list=PL1"],
+      expect.objectContaining({ timeout: expect.any(Number) }),
+    );
   });
 
   it("skips malformed lines and unavailable (private/deleted) entries", async () => {

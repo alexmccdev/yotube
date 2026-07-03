@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { downloadAudio, fetchMetadata, tagAndCopy, ProcessError } from "./ytdlp";
+import { downloadAudio, fetchMetadata, getDuration, ProcessError } from "./ytdlp";
 import { extractVideoId } from "./validate";
 import { pickIcon } from "./yoto-icons";
 import type { TrackStatus } from "./track-status";
@@ -40,6 +40,14 @@ const CARDS_DIR = process.env.CARDS_DIR ?? path.join(process.cwd(), "cards");
 
 const cache = new Map<string, Card>();
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Card IDs are always `randomUUID()`. Rejecting anything else here keeps route params
+ *  (which may contain `../` after URL-decoding) from ever reaching a filesystem path. */
+function isValidCardId(cardId: string): boolean {
+  return UUID_PATTERN.test(cardId);
+}
+
 function cardDir(cardId: string) {
   return path.join(WORK_DIR, cardId);
 }
@@ -52,13 +60,28 @@ function rawAudioPath(cardId: string, trackId: string) {
   return path.join(cardDir(cardId), `${trackId}`);
 }
 
+/** Chains persist() calls per card so concurrent writes (e.g. multiple tracks in the
+ *  same card downloading at once) never interleave two writeFile calls to the same path. */
+const persistQueue = new Map<string, Promise<void>>();
+
 async function persist(card: Card): Promise<void> {
   cache.set(card.id, card);
-  await fs.mkdir(cardDir(card.id), { recursive: true });
-  await fs.writeFile(statePath(card.id), JSON.stringify(card, null, 2));
+  const prior = persistQueue.get(card.id) ?? Promise.resolve();
+  const next = prior
+    .catch(() => {})
+    .then(async () => {
+      await fs.mkdir(cardDir(card.id), { recursive: true });
+      const target = statePath(card.id);
+      const tmpPath = `${target}.${randomUUID()}.tmp`;
+      await fs.writeFile(tmpPath, JSON.stringify(card, null, 2));
+      await fs.rename(tmpPath, target);
+    });
+  persistQueue.set(card.id, next);
+  return next;
 }
 
 export async function getCard(cardId: string): Promise<Card | undefined> {
+  if (!isValidCardId(cardId)) return undefined;
   if (cache.has(cardId)) return cache.get(cardId);
   try {
     const raw = await fs.readFile(statePath(cardId), "utf8");
@@ -91,7 +114,10 @@ export async function createCard(title: string): Promise<Card> {
 }
 
 export function sanitizeFilename(value: string): string {
-  return value.replace(/[\/\\:*?"<>|]/g, "").trim().slice(0, 80) || "untitled";
+  const cleaned = value.replace(/[\/\\:*?"<>|]/g, "").trim().slice(0, 80);
+  // Reject dot-only results ("", ".", "..") so a title can never resolve to the parent
+  // (or same) directory when joined with a base path.
+  return /^\.*$/.test(cleaned) ? "untitled" : cleaned;
 }
 
 // --- bounded concurrency queue ---
@@ -145,9 +171,10 @@ async function processTrack(cardId: string, trackId: string): Promise<void> {
       void assignIconForTrack(cardId, trackId, meta.title);
       void assignCoverFromThumbnail(cardId, meta.thumbnail);
 
-      await downloadAudio(track.url, rawAudioPath(cardId, trackId));
+      const rawPath = await downloadAudio(track.url, rawAudioPath(cardId, trackId));
+      const duration = await getDuration(rawPath);
 
-      await updateTrack(cardId, trackId, { status: "ready" });
+      await updateTrack(cardId, trackId, { status: "ready", duration });
     } catch (err) {
       const message = err instanceof ProcessError ? `${err.message}: ${err.stderr}` : String(err);
       await updateTrack(cardId, trackId, { status: "error", error: message });
@@ -284,7 +311,9 @@ export async function finalizeCard(
     return { ok: false, error: "All tracks must finish downloading before staging" };
   }
 
-  const outputDir = path.join(CARDS_DIR, sanitizeFilename(card.title));
+  // Suffix with a slice of the card ID so two cards sharing a title (or titles that
+  // sanitize down to the same string) don't collide on the same output directory.
+  const outputDir = path.join(CARDS_DIR, `${sanitizeFilename(card.title)}-${card.id.slice(0, 8)}`);
   if (card.outputDir && card.outputDir !== outputDir) {
     await fs.rm(card.outputDir, { recursive: true, force: true });
   }
@@ -297,17 +326,12 @@ export async function finalizeCard(
     const outputPath = path.join(outputDir, filename);
 
     try {
-      await updateTrack(cardId, track.id, { status: "tagging" });
-      const duration = await tagAndCopy(`${rawAudioPath(cardId, track.id)}.m4a`, outputPath, {
-        title: track.title,
-        track: trackNumber,
-        album: card.title,
-      });
-      await updateTrack(cardId, track.id, { status: "done", filePath: outputPath, duration });
+      await fs.copyFile(`${rawAudioPath(cardId, track.id)}.m4a`, outputPath);
+      await updateTrack(cardId, track.id, { status: "done", filePath: outputPath });
     } catch (err) {
       const message = err instanceof ProcessError ? `${err.message}: ${err.stderr}` : String(err);
       await updateTrack(cardId, track.id, { status: "error", error: message });
-      return { ok: false, error: `Failed tagging "${track.title}": ${message}` };
+      return { ok: false, error: `Failed finalizing "${track.title}": ${message}` };
     }
   }
 
@@ -426,18 +450,18 @@ export async function clearYotoCardId(cardId: string): Promise<boolean> {
   return true;
 }
 
-/** In-memory progress is lost on restart: tracks mid-download just resume, but a track
- *  caught mid-"tagging" can't be resumed safely (the ffmpeg run may be partial), so it's
- *  reset to "ready" for the user to re-stage. */
+/** In-memory progress is lost on restart: tracks mid-download just resume, and a push
+ *  to Yoto that was interrupted mid-flight is reset so the UI doesn't show a stuck spinner. */
 async function recoverIncompleteJobs(): Promise<void> {
   const cards = await listCards();
   for (const card of cards) {
+    if (card.pushingToYoto) {
+      await setPushError(card.id, "Interrupted by a server restart — please try again.");
+    }
     if (card.finalized) continue;
     for (const track of card.tracks) {
       if (track.status === "queued" || track.status === "fetching" || track.status === "downloading") {
         void processTrack(card.id, track.id);
-      } else if (track.status === "tagging") {
-        await updateTrack(card.id, track.id, { status: "ready" });
       }
     }
   }
@@ -447,7 +471,11 @@ declare global {
   var __yotubeJobsRecovered: boolean | undefined;
 }
 
-if (!globalThis.__yotubeJobsRecovered) {
+// Guard against `next build` (which imports route modules to collect metadata) kicking off
+// real downloads or Yoto pushes as a side effect of module evaluation.
+const isBuildPhase = process.env.NEXT_PHASE === "phase-production-build";
+
+if (!isBuildPhase && !globalThis.__yotubeJobsRecovered) {
   globalThis.__yotubeJobsRecovered = true;
   void recoverIncompleteJobs();
 }

@@ -14,6 +14,9 @@ export async function POST(_request: Request, ctx: RouteContext<"/api/cards/[id]
   if (!card.finalized || !card.outputDir) {
     return Response.json({ error: "Card must be staged before pushing to Yoto" }, { status: 400 });
   }
+  if (card.pushingToYoto) {
+    return Response.json({ error: "Already pushing this card to Yoto" }, { status: 409 });
+  }
 
   await setPushingToYoto(id, true);
 

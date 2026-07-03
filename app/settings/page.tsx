@@ -90,16 +90,25 @@ export default function SettingsPage() {
           <div className="flex flex-col gap-1">
             <h2 className="font-display text-lg font-semibold">Yoto Client ID</h2>
             <p className="text-sm text-ink-text/60">
-              Used to connect your Yoto account. Get one from{" "}
+              Used to connect your Yoto account. Register an app and get a client ID from{" "}
               <a
-                href="https://yotoplay.com/get-started/developer-portal"
+                href="https://dashboard.yoto.dev/"
                 target="_blank"
                 rel="noreferrer"
                 className="text-brass hover:underline"
               >
-                Yoto&apos;s developer portal
+                dashboard.yoto.dev
               </a>
-              .
+              . See the{" "}
+              <a
+                href="https://yoto.dev/api/"
+                target="_blank"
+                rel="noreferrer"
+                className="text-brass hover:underline"
+              >
+                API reference
+              </a>{" "}
+              for details.
             </p>
           </div>
 

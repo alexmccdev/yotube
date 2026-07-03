@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import http from "node:http";
 import path from "node:path";
 
+// Client apps are registered at https://dashboard.yoto.dev/ (see yoto-config.json / setClientId).
 const REDIRECT_URI = "http://127.0.0.1:8787/callback";
 const AUTHORIZE_URL = "https://login.yotoplay.com/authorize";
 const TOKEN_URL = "https://login.yotoplay.com/oauth/token";
@@ -88,7 +89,8 @@ async function readTokens(): Promise<StoredTokens | undefined> {
 
 async function writeTokens(tokens: StoredTokens): Promise<void> {
   await fs.mkdir(path.dirname(TOKEN_PATH), { recursive: true });
-  await fs.writeFile(TOKEN_PATH, JSON.stringify(tokens, null, 2));
+  await fs.writeFile(TOKEN_PATH, JSON.stringify(tokens, null, 2), { mode: 0o600 });
+  await fs.chmod(TOKEN_PATH, 0o600);
 }
 
 export async function isConnected(): Promise<boolean> {
@@ -157,6 +159,10 @@ export async function startConnectYotoAccount(): Promise<{ authorizeUrl: string 
 
   const codeVerifier = base64url(randomBytes(32));
   const codeChallenge = base64url(createHash("sha256").update(codeVerifier).digest());
+  // CSRF guard for the redirect: without this, anything that can reach the loopback
+  // callback server could inject its own authorization code and link this app to an
+  // attacker-controlled Yoto account.
+  const state = base64url(randomBytes(16));
 
   const authorizeUrl = new URL(AUTHORIZE_URL);
   authorizeUrl.searchParams.set("audience", AUDIENCE);
@@ -166,8 +172,15 @@ export async function startConnectYotoAccount(): Promise<{ authorizeUrl: string 
   authorizeUrl.searchParams.set("code_challenge", codeChallenge);
   authorizeUrl.searchParams.set("code_challenge_method", "S256");
   authorizeUrl.searchParams.set("redirect_uri", REDIRECT_URI);
+  authorizeUrl.searchParams.set("state", state);
 
   const codePromise = new Promise<string>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      server.close();
+      activeCallbackServer = undefined;
+      reject(new Error("Timed out waiting for Yoto login"));
+    }, 120_000);
+
     const server = http.createServer((req, res) => {
       const url = new URL(req.url ?? "/", REDIRECT_URI);
       if (url.pathname !== "/callback") {
@@ -176,9 +189,21 @@ export async function startConnectYotoAccount(): Promise<{ authorizeUrl: string 
       }
       const code = url.searchParams.get("code");
       const error = url.searchParams.get("error");
+      const returnedState = url.searchParams.get("state");
+      if (returnedState !== state) {
+        res.writeHead(400, { "Content-Type": "text/html" }).end(
+          "<html><body>Login failed: state mismatch.</body></html>",
+        );
+        clearTimeout(timer);
+        server.close();
+        activeCallbackServer = undefined;
+        reject(new Error("OAuth state mismatch — possible CSRF, login aborted"));
+        return;
+      }
       res.writeHead(200, { "Content-Type": "text/html" }).end(
         "<html><body>Yoto connected — you can close this tab.</body></html>",
       );
+      clearTimeout(timer);
       server.close();
       activeCallbackServer = undefined;
       if (code) resolve(code);
@@ -186,12 +211,10 @@ export async function startConnectYotoAccount(): Promise<{ authorizeUrl: string 
     });
     activeCallbackServer = server;
     server.listen(8787, "127.0.0.1");
-    server.on("error", reject);
-    setTimeout(() => {
-      server.close();
-      activeCallbackServer = undefined;
-      reject(new Error("Timed out waiting for Yoto login"));
-    }, 120_000);
+    server.on("error", (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
   });
 
   void codePromise
@@ -204,6 +227,11 @@ export async function startConnectYotoAccount(): Promise<{ authorizeUrl: string 
   return { authorizeUrl: authorizeUrl.toString() };
 }
 
+// Yoto's token endpoint rotates refresh tokens, so two concurrent refreshes racing on the
+// same stale refresh token would leave the loser with an invalidated one. Memoizing the
+// in-flight refresh means every concurrent caller shares a single outcome.
+let refreshInFlight: Promise<string> | undefined;
+
 export async function getValidAccessToken(): Promise<string> {
   const stored = await readTokens();
   if (!stored) throw new Error("Not connected to Yoto. Connect your account first.");
@@ -212,7 +240,16 @@ export async function getValidAccessToken(): Promise<string> {
   const expiringSoon = expiry !== undefined && Date.now() / 1000 > expiry - 30;
   if (!expiringSoon) return stored.accessToken;
 
-  const refreshed = await refreshTokens(stored.refreshToken);
-  await writeTokens({ accessToken: refreshed.access_token, refreshToken: refreshed.refresh_token });
-  return refreshed.access_token;
+  if (!refreshInFlight) {
+    refreshInFlight = (async () => {
+      try {
+        const refreshed = await refreshTokens(stored.refreshToken);
+        await writeTokens({ accessToken: refreshed.access_token, refreshToken: refreshed.refresh_token });
+        return refreshed.access_token;
+      } finally {
+        refreshInFlight = undefined;
+      }
+    })();
+  }
+  return refreshInFlight;
 }

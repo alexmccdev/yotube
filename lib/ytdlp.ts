@@ -1,4 +1,5 @@
 import { execa } from "execa";
+import { promises as fs } from "fs";
 
 export class ProcessError extends Error {
   stderr: string;
@@ -22,9 +23,17 @@ export interface VideoMetadata {
   duration?: number;
 }
 
+const METADATA_TIMEOUT_MS = 30_000;
+const PLAYLIST_TIMEOUT_MS = 60_000;
+const DOWNLOAD_TIMEOUT_MS = 10 * 60_000;
+const FFMPEG_TIMEOUT_MS = 5 * 60_000;
+const FFPROBE_TIMEOUT_MS = 30_000;
+
 export async function fetchMetadata(url: string): Promise<VideoMetadata> {
   try {
-    const { stdout } = await execa("yt-dlp", ["--dump-json", "--no-playlist", url]);
+    const { stdout } = await execa("yt-dlp", ["--dump-json", "--no-playlist", url], {
+      timeout: METADATA_TIMEOUT_MS,
+    });
     const data = JSON.parse(stdout) as { title: string; thumbnail?: string; duration?: number };
     return { title: data.title, thumbnail: data.thumbnail, duration: data.duration };
   } catch (err) {
@@ -53,7 +62,9 @@ export interface PlaylistListing {
 export async function fetchPlaylistVideoIds(url: string): Promise<PlaylistListing> {
   let stdout: string;
   try {
-    const result = await execa("yt-dlp", ["--flat-playlist", "--dump-json", url]);
+    const result = await execa("yt-dlp", ["--flat-playlist", "--dump-json", url], {
+      timeout: PLAYLIST_TIMEOUT_MS,
+    });
     stdout = result.stdout;
   } catch (err) {
     throw new ProcessError("Failed to fetch playlist", stderrOf(err));
@@ -83,72 +94,51 @@ export async function fetchPlaylistVideoIds(url: string): Promise<PlaylistListin
   return { playlistTitle, videos, skipped };
 }
 
-/** Downloads + extracts audio to `${outPathNoExt}.m4a`, returning the final path. */
-export async function downloadAudio(url: string, outPathNoExt: string): Promise<string> {
-  try {
-    await execa("yt-dlp", [
-      "-x",
-      "--audio-format",
-      "m4a",
-      "--audio-quality",
-      "128K",
-      "--no-playlist",
-      "-o",
-      `${outPathNoExt}.%(ext)s`,
-      url,
-    ]);
-  } catch (err) {
-    throw new ProcessError("Failed to download audio", stderrOf(err));
-  }
-  return `${outPathNoExt}.m4a`;
-}
-
 /** Loudness normalization, applied uniformly so tracks pulled from different sources
  *  don't vary wildly in level when played back to back. */
 const AUDIO_FILTER = "loudnorm=I=-16:TP=-1.5:LRA=11";
 
-/** Normalizes loudness and tags the audio. Re-encodes (the loudnorm filter requires it)
- *  so the returned duration reflects the actual output. */
-export async function tagAndCopy(
-  inputPath: string,
-  outputPath: string,
-  opts: { title: string; track: number; album: string },
-): Promise<number> {
+/** Downloads, extracts, and loudness-normalizes audio to `${outPathNoExt}.m4a`, returning
+ *  the final path. Normalizing here (rather than at finalize) means it rides along with
+ *  yt-dlp's extraction re-encode instead of costing a second one later. */
+export async function downloadAudio(url: string, outPathNoExt: string): Promise<string> {
+  const outputPath = `${outPathNoExt}.m4a`;
+  const rawPath = `${outPathNoExt}.raw.m4a`;
   try {
-    await execa("ffmpeg", [
-      "-y",
-      "-i",
-      inputPath,
-      "-af",
-      AUDIO_FILTER,
-      "-c:a",
-      "aac",
-      "-b:a",
-      "128k",
-      "-metadata",
-      `title=${opts.title}`,
-      "-metadata",
-      `track=${opts.track}`,
-      "-metadata",
-      `album=${opts.album}`,
-      outputPath,
-    ]);
+    await execa(
+      "yt-dlp",
+      [
+        "-x",
+        "--audio-format",
+        "m4a",
+        "--audio-quality",
+        "64K",
+        "--no-playlist",
+        "-o",
+        `${outPathNoExt}.raw.%(ext)s`,
+        url,
+      ],
+      { timeout: DOWNLOAD_TIMEOUT_MS },
+    );
+    await execa(
+      "ffmpeg",
+      ["-y", "-i", rawPath, "-af", AUDIO_FILTER, "-c:a", "aac", "-b:a", "64k", outputPath],
+      { timeout: FFMPEG_TIMEOUT_MS },
+    );
   } catch (err) {
-    throw new ProcessError("Failed to tag audio", stderrOf(err));
+    throw new ProcessError("Failed to download audio", stderrOf(err));
+  } finally {
+    await fs.rm(rawPath, { force: true });
   }
-  return getDuration(outputPath);
+  return outputPath;
 }
 
 export async function getDuration(filePath: string): Promise<number> {
-  const { stdout } = await execa("ffprobe", [
-    "-v",
-    "error",
-    "-show_entries",
-    "format=duration",
-    "-of",
-    "default=noprint_wrappers=1:nokey=1",
-    filePath,
-  ]);
+  const { stdout } = await execa(
+    "ffprobe",
+    ["-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", filePath],
+    { timeout: FFPROBE_TIMEOUT_MS },
+  );
   return Math.round(Number(stdout.trim()));
 }
 

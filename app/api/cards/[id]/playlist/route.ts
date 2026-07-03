@@ -1,5 +1,5 @@
 import { addTracksBatch, getCard, renameCard } from "@/lib/jobs";
-import { canonicalPlaylistUrl, isYoutubePlaylistUrl } from "@/lib/validate";
+import { canonicalPlaylistUrl, isValidVideoId, isYoutubePlaylistUrl } from "@/lib/validate";
 import { fetchPlaylistVideoIds, ProcessError } from "@/lib/ytdlp";
 
 /** Resolves a playlist URL for the preview/confirm step, without creating any tracks. */
@@ -33,7 +33,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/cards/[id]/
     .catch(() => ({}) as { videos?: { id?: string; title?: string }[]; playlistTitle?: string });
   const videos = (body.videos ?? [])
     .filter((v: { id?: string; title?: string }): v is { id: string; title: string } =>
-      Boolean(v.id && v.title),
+      Boolean(v.id && v.title && isValidVideoId(v.id)),
     )
     .map((v: { id: string; title: string }) => ({
       videoId: v.id,

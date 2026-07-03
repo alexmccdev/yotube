@@ -123,11 +123,11 @@ describe("pushCardToYoto", () => {
 
   it("times out after repeated failed polls with a descriptive error", async () => {
     vi.useFakeTimers();
-    wireHappyPathFetch({ pollResponses: Array(24).fill({ transcode: {} }) });
+    wireHappyPathFetch({ pollResponses: Array(120).fill({ transcode: {} }) });
 
     const promise = pushCardToYoto("My Card", [baseTrack]);
     const expectation = expect(promise).rejects.toThrow(/Timed out waiting for Yoto to transcode/);
-    await vi.advanceTimersByTimeAsync(5000 * 24);
+    await vi.advanceTimersByTimeAsync(5000 * 120);
     await expectation;
   });
 

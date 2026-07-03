@@ -17,7 +17,7 @@ export interface StageCard {
 /** The four checkpoints a card passes through, library-circulation-card style. */
 export function getCardStages(card: StageCard): Stage[] {
   const total = card.tracks.length;
-  const ready = card.tracks.filter((t) => t.status === "ready" || t.status === "tagging" || t.status === "done").length;
+  const ready = card.tracks.filter((t) => t.status === "ready" || t.status === "done").length;
   const errored = card.tracks.some((t) => t.status === "error");
 
   const editingStatus: StageStatus = card.finalized ? "done" : "active";
@@ -50,7 +50,7 @@ export function getCardStages(card: StageCard): Stage[] {
 /** One-line summary of where a card sits in its lifecycle, for compact list rows. */
 export function getStatusLine(card: StageCard): { text: string; tone: "idle" | "active" | "done" | "error" } {
   const total = card.tracks.length;
-  const ready = card.tracks.filter((t) => t.status === "ready" || t.status === "tagging" || t.status === "done").length;
+  const ready = card.tracks.filter((t) => t.status === "ready" || t.status === "done").length;
   const errored = card.tracks.some((t) => t.status === "error");
 
   if (card.pushingToYoto) return { text: "Pushing to Yoto…", tone: "active" };

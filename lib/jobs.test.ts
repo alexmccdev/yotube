@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -18,8 +18,12 @@ vi.mock("./ytdlp", () => {
       duration: 42,
       thumbnail: "https://example.com/thumb.jpg",
     })),
-    downloadAudio: vi.fn(async (_url: string, outPathNoExt: string) => `${outPathNoExt}.m4a`),
-    tagAndCopy: vi.fn(async () => 42),
+    downloadAudio: vi.fn(async (_url: string, outPathNoExt: string) => {
+      await mkdir(path.dirname(outPathNoExt), { recursive: true });
+      await writeFile(`${outPathNoExt}.m4a`, "fake audio");
+      return `${outPathNoExt}.m4a`;
+    }),
+    getDuration: vi.fn(async () => 42),
   };
 });
 
@@ -68,7 +72,10 @@ describe("WORK_DIR override", () => {
   afterEach(async () => {
     process.env.WORK_DIR = originalWorkDir;
     vi.resetModules();
-    await rm(dir, { recursive: true, force: true });
+    // maxRetries/retryDelay: some tests don't await background processTrack() calls before
+    // finishing, so a persist() write can still be landing (mkdir + tmp-write + rename) when
+    // teardown starts — retrying absorbs that harmless race instead of failing on ENOTEMPTY.
+    await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   });
 
   it("persists and lists cards under WORK_DIR when set", async () => {
@@ -119,7 +126,10 @@ describe("card/track lifecycle", () => {
     process.env.WORK_DIR = originalWorkDir;
     process.env.CARDS_DIR = originalCardsDir;
     vi.resetModules();
-    await rm(dir, { recursive: true, force: true });
+    // maxRetries/retryDelay: some tests don't await background processTrack() calls before
+    // finishing, so a persist() write can still be landing (mkdir + tmp-write + rename) when
+    // teardown starts — retrying absorbs that harmless race instead of failing on ENOTEMPTY.
+    await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   });
 
   async function readyCardWithOneTrack(jobs: typeof import("./jobs")) {

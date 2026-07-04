@@ -58,12 +58,15 @@ describe("downloadAudio", () => {
     expect(result).toBe("/tmp/card/track1.m4a");
     expect(execaMock).toHaveBeenCalledWith(
       "yt-dlp",
-      expect.arrayContaining(["-x", "--audio-format", "m4a", "https://youtu.be/abc"]),
-      expect.objectContaining({ timeout: expect.any(Number) }),
-    );
-    expect(execaMock).toHaveBeenCalledWith(
-      "ffmpeg",
-      expect.arrayContaining(["-i", "/tmp/card/track1.raw.m4a", "-af", expect.stringContaining("loudnorm")]),
+      expect.arrayContaining([
+        "-x",
+        "--audio-format",
+        "m4a",
+        "--audio-quality",
+        "128K",
+        "--force-overwrites",
+        "https://youtu.be/abc",
+      ]),
       expect.objectContaining({ timeout: expect.any(Number) }),
     );
   });

@@ -1,5 +1,4 @@
 import { execa } from "execa";
-import { promises as fs } from "fs";
 
 export class ProcessError extends Error {
   stderr: string;
@@ -26,7 +25,6 @@ export interface VideoMetadata {
 const METADATA_TIMEOUT_MS = 30_000;
 const PLAYLIST_TIMEOUT_MS = 60_000;
 const DOWNLOAD_TIMEOUT_MS = 10 * 60_000;
-const FFMPEG_TIMEOUT_MS = 5 * 60_000;
 const FFPROBE_TIMEOUT_MS = 30_000;
 
 export async function fetchMetadata(url: string): Promise<VideoMetadata> {
@@ -94,16 +92,10 @@ export async function fetchPlaylistVideoIds(url: string): Promise<PlaylistListin
   return { playlistTitle, videos, skipped };
 }
 
-/** Loudness normalization, applied uniformly so tracks pulled from different sources
- *  don't vary wildly in level when played back to back. */
-const AUDIO_FILTER = "loudnorm=I=-16:TP=-1.5:LRA=11";
-
-/** Downloads, extracts, and loudness-normalizes audio to `${outPathNoExt}.m4a`, returning
- *  the final path. Normalizing here (rather than at finalize) means it rides along with
- *  yt-dlp's extraction re-encode instead of costing a second one later. */
+/** Downloads and extracts audio straight to `${outPathNoExt}.m4a`, returning the final
+ *  path. 128K matches what Yoto's own transcode pipeline re-encodes everything to anyway. */
 export async function downloadAudio(url: string, outPathNoExt: string): Promise<string> {
   const outputPath = `${outPathNoExt}.m4a`;
-  const rawPath = `${outPathNoExt}.raw.m4a`;
   try {
     await execa(
       "yt-dlp",
@@ -112,23 +104,20 @@ export async function downloadAudio(url: string, outPathNoExt: string): Promise<
         "--audio-format",
         "m4a",
         "--audio-quality",
-        "64K",
+        "128K",
         "--no-playlist",
+        // yt-dlp skips downloading (and re-extracting) if the destination file already
+        // exists, which silently no-ops a retry on a track that failed after a partial
+        // write — force it to actually redo the work.
+        "--force-overwrites",
         "-o",
-        `${outPathNoExt}.raw.%(ext)s`,
+        `${outPathNoExt}.%(ext)s`,
         url,
       ],
       { timeout: DOWNLOAD_TIMEOUT_MS },
     );
-    await execa(
-      "ffmpeg",
-      ["-y", "-i", rawPath, "-af", AUDIO_FILTER, "-c:a", "aac", "-b:a", "64k", outputPath],
-      { timeout: FFMPEG_TIMEOUT_MS },
-    );
   } catch (err) {
     throw new ProcessError("Failed to download audio", stderrOf(err));
-  } finally {
-    await fs.rm(rawPath, { force: true });
   }
   return outputPath;
 }

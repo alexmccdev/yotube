@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A local, single-user Next.js app that rips YouTube audio via `yt-dlp`/`ffmpeg`, organizes it into Yoto-card-ready `.m4a` tracks (loudness-normalized, 64kbps AAC — no ID3 tagging, Yoto gets titles from the JSON payload instead), and pushes finished cards straight into the user's Yoto account. No database — card/track state lives in `work/<card-id>/state.json` (JSON file is the source of truth; the in-memory `Map` in [lib/jobs.ts](lib/jobs.ts) is just a read cache that survives dev-server reloads).
+A local, single-user Next.js app that rips YouTube audio via `yt-dlp`/`ffmpeg`, organizes it into Yoto-card-ready `.m4a` tracks (128kbps AAC, matching Yoto's own transcode target — no ID3 tagging, Yoto gets titles from the JSON payload instead), and pushes finished cards straight into the user's Yoto account. No database — card/track state lives in `work/<card-id>/state.json` (JSON file is the source of truth; the in-memory `Map` in [lib/jobs.ts](lib/jobs.ts) is just a read cache that survives dev-server reloads).
 
 ## Commands
 
@@ -28,7 +28,7 @@ After adding new `app/api/.../route.ts` files, run `rm -rf .next && npx next typ
 Plain route handlers under `app/api/` (no Hono — tried it, removed it, not worth it for ~10 small endpoints).
 
 - [lib/jobs.ts](lib/jobs.ts) — `Card`/`Track` types, JSON state persistence, bounded-concurrency (3) processing queue, finalize logic, post-finalize icon/cover auto-assignment. This is the core module; almost everything else feeds into or reads from it.
-- [lib/ytdlp.ts](lib/ytdlp.ts) — `yt-dlp`/`ffmpeg` wrappers: metadata fetch, audio download + loudness normalization (64kbps AAC). No ID3 tagging — Yoto gets track titles from the JSON payload in `pushCardToYoto`, not file metadata, so finalize just copies the file.
+- [lib/ytdlp.ts](lib/ytdlp.ts) — `yt-dlp`/`ffmpeg` wrappers: metadata fetch, audio download (128kbps AAC, matching Yoto's own transcode target). No ID3 tagging — Yoto gets track titles from the JSON payload in `pushCardToYoto`, not file metadata, so finalize just copies the file.
 - [lib/yoto-auth.ts](lib/yoto-auth.ts) — Yoto OAuth (PKCE + loopback callback server on `127.0.0.1:8787`), token storage/refresh in `work/.yoto-auth.json`.
 - [lib/yoto-api.ts](lib/yoto-api.ts) — uploads tracks to Yoto (presigned URL → PUT → poll transcode), then creates the card via `POST /content`.
 - [lib/stage.ts](lib/stage.ts) — derives the 4-stage lifecycle UI (created/editing/staged/on-yoto) from card/track state.
@@ -40,7 +40,7 @@ Plain route handlers under `app/api/` (no Hono — tried it, removed it, not wor
 
 ### Card lifecycle
 
-Card states: draft (`finalized: false`) → tracks download through `queued → fetching → downloading → ready` (or `error`) — audio is already loudness-normalized at download time — → "Finalize" copies each ready track's file into `cards/<Card Title>/NN - Track Title.m4a`, marks it `done`, and sets `finalized: true` → "Push to Yoto" uploads and sets `yotoCardId`. A finalized card is locked (`isLocked()` in jobs.ts) — editing requires `unstageCard()` first, and unlinking from Yoto (`clearYotoCardId()`) also unstages it since the linked card no longer reflects local edits.
+Card states: draft (`finalized: false`) → tracks download through `queued → fetching → downloading → ready` (or `error`) — → "Finalize" copies each ready track's file into `cards/<Card Title>/NN - Track Title.m4a`, marks it `done`, and sets `finalized: true` → "Push to Yoto" uploads and sets `yotoCardId`. A finalized card is locked (`isLocked()` in jobs.ts) — editing requires `unstageCard()` first, and unlinking from Yoto (`clearYotoCardId()`) also unstages it since the linked card no longer reflects local edits.
 
 ### Yoto integration
 

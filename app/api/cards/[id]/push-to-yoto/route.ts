@@ -3,6 +3,7 @@ import {
   getCard,
   setPushError,
   setPushingToYoto,
+  setPushProgress,
   setYotoCardId,
 } from "@/lib/jobs";
 import { pushCardToYoto } from "@/lib/yoto-api";
@@ -36,7 +37,14 @@ export async function POST(_request: Request, ctx: RouteContext<"/api/cards/[id]
       };
     });
 
-    const { yotoCardId } = await pushCardToYoto(card.title, tracks, card.coverImageUrl);
+    const { yotoCardId } = await pushCardToYoto(
+      card.title,
+      tracks,
+      card.coverImageUrl,
+      (completed, total) => setPushProgress(id, completed, total),
+      (createdId) => setYotoCardId(id, createdId),
+      card.yotoCardId,
+    );
     await setYotoCardId(id, yotoCardId);
     await setPushingToYoto(id, false);
     return Response.json({ yotoCardId });

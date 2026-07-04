@@ -88,17 +88,43 @@ function wireHappyPathFetch(opts: { pollResponses?: unknown[] } = {}) {
   fetchMock.mockImplementation(happyPathFetch(opts.pollResponses));
 }
 
-describe("pushCardToYoto", () => {
-  it("uploads the track, polls until transcoded, and creates the card", async () => {
-    wireHappyPathFetch();
-    const result = await pushCardToYoto("My Card", [baseTrack]);
-    expect(result).toEqual({ yotoCardId: "card-xyz" });
+function contentCalls() {
+  return calls().filter(([url, init]) => url.includes("/content") && init?.method === "POST");
+}
 
-    const contentCall = calls().find(([url]) => url.includes("/content"));
-    const body = JSON.parse(contentCall![1]!.body as string);
+function lastContentBody() {
+  const calls = contentCalls();
+  return JSON.parse(calls[calls.length - 1][1]!.body as string);
+}
+
+describe("pushCardToYoto", () => {
+  it("creates an empty card immediately, then fills it in as tracks finish uploading", async () => {
+    wireHappyPathFetch();
+    const onCardCreated = vi.fn();
+    const result = await pushCardToYoto("My Card", [baseTrack], undefined, undefined, onCardCreated);
+    expect(result).toEqual({ yotoCardId: "card-xyz" });
+    expect(onCardCreated).toHaveBeenCalledWith("card-xyz");
+
+    const posts = contentCalls();
+    // first call creates the card with no chapters yet and no cardId
+    const firstBody = JSON.parse(posts[0][1]!.body as string);
+    expect(firstBody.cardId).toBeUndefined();
+    expect(firstBody.content.chapters).toEqual([]);
+    // subsequent calls update the same card by id
+    expect(posts.slice(1).every(([, init]) => JSON.parse(init!.body as string).cardId === "card-xyz")).toBe(true);
+
+    const body = lastContentBody();
     expect(body.title).toBe("My Card");
     expect(body.content.chapters[0].tracks[0].trackUrl).toBe("yoto:#sha-1");
     expect(body.content.chapters[0].tracks[0].fileSize).toBe(1234);
+  });
+
+  it("reuses an existing yotoCardId instead of creating a new card", async () => {
+    wireHappyPathFetch();
+    await pushCardToYoto("My Card", [baseTrack], undefined, undefined, undefined, "existing-card");
+
+    const posts = contentCalls();
+    expect(posts.every(([, init]) => JSON.parse(init!.body as string).cardId === "existing-card")).toBe(true);
   });
 
   it("retries polling until the transcode finishes", async () => {
@@ -132,7 +158,13 @@ describe("pushCardToYoto", () => {
   });
 
   it("throws when the upload URL request fails", async () => {
-    fetchMock.mockResolvedValueOnce(jsonResponse({ error: "nope" }, false));
+    const fallback = happyPathFetch();
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url.includes("/media/transcode/audio/uploadUrl")) {
+        return jsonResponse({ error: "nope" }, false);
+      }
+      return fallback(url, init);
+    });
     await expect(pushCardToYoto("My Card", [baseTrack])).rejects.toThrow("Failed to get upload URL");
   });
 
@@ -143,8 +175,7 @@ describe("pushCardToYoto", () => {
     const iconUploadCalls = calls().filter(([url]) => url.includes("/media/displayIcons/user/me/upload"));
     expect(iconUploadCalls).toHaveLength(0);
 
-    const contentCall = calls().find(([url]) => url.includes("/content"));
-    const body = JSON.parse(contentCall![1]!.body as string);
+    const body = lastContentBody();
     expect(body.content.chapters[0].display.icon16x16).toBe("yoto:#already-uploaded");
   });
 
@@ -152,8 +183,7 @@ describe("pushCardToYoto", () => {
     wireHappyPathFetch();
     await pushCardToYoto("My Card", [{ ...baseTrack, iconUrl: "https://example.com/icon.png" }]);
 
-    const contentCall = calls().find(([url]) => url.includes("/content"));
-    const body = JSON.parse(contentCall![1]!.body as string);
+    const body = lastContentBody();
     expect(body.content.chapters[0].display.icon16x16).toBe("yoto:#icon-media-1");
   });
 
@@ -169,8 +199,7 @@ describe("pushCardToYoto", () => {
     const result = await pushCardToYoto("My Card", [baseTrack], "https://example.com/cover.jpg");
     expect(result).toEqual({ yotoCardId: "card-xyz" });
 
-    const contentCall = calls().find(([url]) => url.includes("/content"));
-    const body = JSON.parse(contentCall![1]!.body as string);
+    const body = lastContentBody();
     expect(body.metadata).toBeUndefined();
   });
 
@@ -178,15 +207,73 @@ describe("pushCardToYoto", () => {
     wireHappyPathFetch();
     await pushCardToYoto("My Card", [baseTrack], "https://example.com/cover.jpg");
 
-    const contentCall = calls().find(([url]) => url.includes("/content"));
-    const body = JSON.parse(contentCall![1]!.body as string);
+    const body = lastContentBody();
     expect(body.metadata.cover.imageL).toBe("https://cover.example/img");
+  });
+
+  it("places chapters by trackNumber (not array/completion order) and reports progress via onProgress", async () => {
+    // Array order is deliberately reversed from trackNumber order, so a naive
+    // push-in-completion-order implementation would produce chapters in the wrong sequence.
+    const trackA = { ...baseTrack, title: "Second", trackNumber: 2 };
+    const trackB = { ...baseTrack, title: "First", trackNumber: 1 };
+
+    let uploadUrlCalls = 0;
+    const fallback = happyPathFetch();
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url.includes("/media/transcode/audio/uploadUrl")) {
+        uploadUrlCalls++;
+        return jsonResponse({
+          upload: { uploadId: `upload-${uploadUrlCalls}`, uploadUrl: `https://put.example/audio-${uploadUrlCalls}` },
+        });
+      }
+      if (url.startsWith("https://put.example/audio-")) {
+        return jsonResponse({});
+      }
+      if (url.includes("/media/upload/upload-1/transcoded")) {
+        return jsonResponse({ transcode: { transcodedSha256: "sha-track2" } });
+      }
+      if (url.includes("/media/upload/upload-2/transcoded")) {
+        return jsonResponse({ transcode: { transcodedSha256: "sha-track1" } });
+      }
+      return fallback(url, init);
+    });
+
+    const onProgress = vi.fn();
+    await pushCardToYoto("My Card", [trackA, trackB], undefined, onProgress);
+
+    const body = lastContentBody();
+    expect(body.content.chapters.map((c: { title: string }) => c.title)).toEqual(["First", "Second"]);
+    expect(body.content.chapters[0].tracks[0].trackUrl).toBe("yoto:#sha-track1");
+    expect(body.content.chapters[1].tracks[0].trackUrl).toBe("yoto:#sha-track2");
+
+    expect(onProgress).toHaveBeenCalledWith(1, 2);
+    expect(onProgress).toHaveBeenCalledWith(2, 2);
+    expect(onProgress).toHaveBeenCalledTimes(2);
+  });
+
+  it("rewrites YouTube webp thumbnails to the native jpg before fetching", async () => {
+    wireHappyPathFetch();
+    await pushCardToYoto(
+      "My Card",
+      [baseTrack],
+      "https://i.ytimg.com/vi_webp/abc123/maxresdefault.webp",
+    );
+
+    const fetchedUrls = calls().map(([url]) => url);
+    expect(fetchedUrls).toContain("https://i.ytimg.com/vi/abc123/maxresdefault.jpg");
+    expect(fetchedUrls).not.toContain("https://i.ytimg.com/vi_webp/abc123/maxresdefault.webp");
   });
 
   it("throws when the final card-creation request fails", async () => {
     const fallback = happyPathFetch();
+    let contentPostCount = 0;
     fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
       if (url.includes("/content") && init?.method === "POST") {
+        contentPostCount++;
+        // let the initial (empty) card creation succeed so a cardId exists; the incremental
+        // update after the track finishes is best-effort and swallows failures, so only the
+        // final authoritative update (outside the upload loop) actually surfaces the error.
+        if (contentPostCount === 1) return fallback(url, init);
         return jsonResponse({ error: "rejected" }, false);
       }
       return fallback(url, init);

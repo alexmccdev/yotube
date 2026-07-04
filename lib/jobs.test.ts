@@ -299,6 +299,26 @@ describe("card/track lifecycle", () => {
     expect(updated?.pushError).toBeUndefined();
   });
 
+  it("setPushProgress records progress, cleared by both setPushingToYoto and setPushError", async () => {
+    const jobs = await import("./jobs");
+    const card = await jobs.createCard("Progress");
+
+    await jobs.setPushProgress(card.id, 1, 3);
+    let updated = await jobs.getCard(card.id);
+    expect(updated?.pushProgress).toEqual({ completed: 1, total: 3 });
+
+    await jobs.setPushingToYoto(card.id, false);
+    updated = await jobs.getCard(card.id);
+    expect(updated?.pushProgress).toBeUndefined();
+
+    await jobs.setPushProgress(card.id, 2, 3);
+    await jobs.setPushError(card.id, "boom");
+    updated = await jobs.getCard(card.id);
+    expect(updated?.pushProgress).toBeUndefined();
+
+    await expect(jobs.setPushProgress("nope", 1, 2)).resolves.toBeUndefined();
+  });
+
   it("processTrack records an error status when fetchMetadata fails", async () => {
     const ytdlp = await import("./ytdlp");
     vi.mocked(ytdlp.fetchMetadata).mockRejectedValueOnce(

@@ -31,6 +31,7 @@ export interface Card {
   yotoCardId?: string;
   pushingToYoto?: boolean;
   pushError?: string;
+  pushProgress?: { completed: number; total: number };
   coverImageUrl?: string;
   coverImageSource?: "youtube-thumbnail" | "custom";
 }
@@ -428,6 +429,14 @@ export async function setPushingToYoto(cardId: string, pushing: boolean): Promis
   if (!card) return;
   card.pushingToYoto = pushing;
   if (pushing) delete card.pushError;
+  delete card.pushProgress;
+  await persist(card);
+}
+
+export async function setPushProgress(cardId: string, completed: number, total: number): Promise<void> {
+  const card = await getCard(cardId);
+  if (!card) return;
+  card.pushProgress = { completed, total };
   await persist(card);
 }
 
@@ -436,6 +445,7 @@ export async function setPushError(cardId: string, error: string): Promise<void>
   if (!card) return;
   card.pushingToYoto = false;
   card.pushError = error;
+  delete card.pushProgress;
   await persist(card);
 }
 

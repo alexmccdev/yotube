@@ -37,6 +37,7 @@ interface Card {
   yotoCardId?: string;
   pushingToYoto?: boolean;
   pushError?: string;
+  pushProgress?: { completed: number; total: number };
   coverImageUrl?: string;
 }
 
@@ -631,9 +632,29 @@ export default function CardStatusPage() {
                   {justLinked && <BrassBurst />}
                 </span>
               )}
-              {card.pushError && <p className="text-sm text-red-700">{card.pushError}</p>}
-
-              {card.yotoCardId ? (
+              {card.pushingToYoto ? (
+                <div className="flex flex-col gap-1 w-full max-w-[220px]">
+                  <div className="h-1.5 w-full rounded-full bg-ink-text/10 overflow-hidden">
+                    <div
+                      className={`h-full rounded-full bg-brass transition-[width] duration-300 ${
+                        card.pushProgress ? "" : "animate-pulse"
+                      }`}
+                      style={{
+                        width: card.pushProgress
+                          ? `${Math.round((card.pushProgress.completed / card.pushProgress.total) * 100)}%`
+                          : "12%",
+                      }}
+                    />
+                  </div>
+                  <p className="font-mono text-[11px] text-ink-text/40">
+                    {card.pushProgress
+                      ? `Uploading ${card.pushProgress.completed} of ${card.pushProgress.total} track${
+                          card.pushProgress.total === 1 ? "" : "s"
+                        }…`
+                      : "Creating card on Yoto…"}
+                  </p>
+                </div>
+              ) : card.yotoCardId && !card.pushError ? (
                 <button
                   type="button"
                   onClick={unlinkYoto}
@@ -643,17 +664,14 @@ export default function CardStatusPage() {
                 </button>
               ) : (
                 <div className="flex flex-col gap-1.5">
+                  {card.pushError && <p className="text-sm text-red-700">{card.pushError}</p>}
                   <button
                     type="button"
-                    disabled={card.pushingToYoto || yotoConnected === null || yotoConnected === false}
+                    disabled={yotoConnected === null || yotoConnected === false}
                     onClick={pushToYoto}
                     className="press self-start bg-ink text-paper font-mono text-sm uppercase tracking-wider px-5 py-2.5 rounded-sm hover:bg-brass hover:text-ink-text transition-colors disabled:opacity-50"
                   >
-                    {card.pushingToYoto ? (
-                      <LoadingDots label="Pushing" className="font-mono text-sm text-paper" />
-                    ) : (
-                      "Push to Yoto"
-                    )}
+                    {card.pushError ? "Retry push" : "Push to Yoto"}
                   </button>
                   <p className="font-mono text-[11px] text-ink-text/40">
                     {yotoConnected === false

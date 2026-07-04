@@ -5,6 +5,26 @@ import { getValidAccessToken } from "./yoto-auth";
 // API reference: https://yoto.dev/api/
 const API_BASE = "https://api.yotoplay.com";
 
+// Bounds simultaneous track uploads/transcodes so a large card doesn't fire dozens of
+// concurrent requests at once — separate from jobs.ts's download queue, a different concern.
+const UPLOAD_CONCURRENCY = 3;
+
+async function mapWithLimit<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    for (let i = next++; i < items.length; i = next++) {
+      results[i] = await fn(items[i]);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+
 interface UploadUrlResponse {
   upload: { uploadId: string; uploadUrl: string };
 }
@@ -72,6 +92,14 @@ async function uploadAudioFile(
   );
 }
 
+// Yoto's media-upload endpoints reject webp outright. YouTube thumbnails are commonly
+// served as webp (`i.ytimg.com/vi_webp/<id>/<name>.webp`), but ytimg serves the identical
+// thumbnail as a native jpg at the same path with `vi` swapped in — that's YouTube's own
+// encode, not a re-compression of the webp, so prefer it over transcoding ourselves.
+function preferNativeJpegThumbnail(url: string): string {
+  return url.replace("/vi_webp/", "/vi/").replace(/\.webp($|\?)/, ".jpg$1");
+}
+
 /** Fetches an image and POSTs it to a Yoto media-upload endpoint, never throwing — image
  *  assignment is best-effort and shouldn't fail the whole card push. */
 async function uploadImage(
@@ -81,7 +109,7 @@ async function uploadImage(
   defaultContentType: string,
 ): Promise<unknown | undefined> {
   try {
-    const imgRes = await fetch(imageUrl, {
+    const imgRes = await fetch(preferNativeJpegThumbnail(imageUrl), {
       headers: { "User-Agent": "Mozilla/5.0 (compatible; yotube/1.0)" },
     });
     if (!imgRes.ok) {
@@ -143,16 +171,68 @@ export interface PushCardResult {
   yotoCardId: string;
 }
 
+interface YotoChapter {
+  key: string;
+  title: string;
+  display: { icon16x16?: string };
+  defaultTrackDisplay: string;
+  defaultTrackAmbient: string;
+  tracks: unknown[];
+}
+
+/** `POST /content` is create-or-update: passing an existing `cardId` updates that card
+ *  in place rather than creating a new one (confirmed against the live API — undocumented
+ *  in yoto.dev's reference, but this is how we get the card to appear immediately and then
+ *  fill in track-by-track instead of only showing up once everything's uploaded). */
+async function createOrUpdateCard(
+  accessToken: string,
+  title: string,
+  chapters: YotoChapter[],
+  cardId?: string,
+  coverMediaUrl?: string,
+): Promise<string> {
+  const res = await fetch(`${API_BASE}/content`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      ...(cardId ? { cardId } : {}),
+      title,
+      content: { chapters },
+      ...(coverMediaUrl ? { metadata: { cover: { imageL: coverMediaUrl } } } : {}),
+    }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    console.error(`[yoto] failed to create/update card (${res.status}): ${text}`);
+    throw new Error(`Failed to create Yoto card: ${text}`);
+  }
+  const body = await res.json();
+  return body.card?.cardId ?? body.cardId;
+}
+
 export async function pushCardToYoto(
   title: string,
   tracks: YotoTrackInput[],
   coverImageUrl?: string,
+  onProgress?: (completed: number, total: number) => void,
+  onCardCreated?: (yotoCardId: string) => void,
+  existingYotoCardId?: string,
 ): Promise<PushCardResult> {
   console.log(`[yoto] pushing card "${title}" with ${tracks.length} track(s)`);
   const accessToken = await getValidAccessToken();
 
-  const chapters = [];
-  for (const track of tracks) {
+  const yotoCardId =
+    existingYotoCardId ?? (await createOrUpdateCard(accessToken, title, []));
+  console.log(`[yoto] card "${title}" ready: yotoCardId=${yotoCardId}`);
+  onCardCreated?.(yotoCardId);
+
+  const slots: YotoChapter[] = [];
+  let completed = 0;
+
+  await mapWithLimit(tracks, UPLOAD_CONCURRENCY, async (track) => {
     const { transcodedSha256 } = await uploadAudioFile(accessToken, track.filePath);
     const trackKey = String(track.trackNumber).padStart(2, "0");
 
@@ -163,7 +243,7 @@ export async function pushCardToYoto(
         : undefined;
     const display = iconMediaId ? { icon16x16: `yoto:#${iconMediaId}` } : {};
 
-    chapters.push({
+    const chapter: YotoChapter = {
       key: trackKey,
       title: track.title,
       display,
@@ -182,31 +262,23 @@ export async function pushCardToYoto(
           display,
         },
       ],
+    };
+
+    slots[track.trackNumber - 1] = chapter;
+    completed++;
+    onProgress?.(completed, tracks.length);
+
+    // Best-effort — a failed incremental update shouldn't fail the whole push, since the
+    // final update below (outside this loop) is authoritative and always runs.
+    await createOrUpdateCard(accessToken, title, slots.filter(Boolean), yotoCardId).catch((err) => {
+      console.error(`[yoto] incremental card update failed:`, err);
     });
-  }
+  });
 
   const coverMediaUrl = coverImageUrl ? await uploadCoverImage(accessToken, coverImageUrl) : undefined;
 
-  console.log(`[yoto] creating card "${title}" with ${chapters.length} chapter(s)`);
-  const res = await fetch(`${API_BASE}/content`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      title,
-      content: { chapters },
-      ...(coverMediaUrl ? { metadata: { cover: { imageL: coverMediaUrl } } } : {}),
-    }),
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    console.error(`[yoto] failed to create card (${res.status}): ${text}`);
-    throw new Error(`Failed to create Yoto card: ${text}`);
-  }
-  const body = await res.json();
-  const yotoCardId = body.card?.cardId ?? body.cardId;
-  console.log(`[yoto] card "${title}" created: yotoCardId=${yotoCardId}`);
+  console.log(`[yoto] finalizing card "${title}" with ${tracks.length} chapter(s)`);
+  await createOrUpdateCard(accessToken, title, slots, yotoCardId, coverMediaUrl);
+
   return { yotoCardId };
 }

@@ -19,8 +19,8 @@ A "Getting started" checklist on the library home page walks through steps 1–4
 ## What it does
 
 1. Paste one or more YouTube URLs (or bare 11-char video IDs) into a new card — live title preview shows up as you type.
-2. Tracks download and loudness-normalize in the background (bounded 3-at-a-time queue), with retry/reorder/rename support.
-3. "Finalize" copies each ready track into `cards/<Card Title>/NN - Track Title.m4a` (64kbps AAC, already normalized at download time) and locks the card for editing.
+2. Tracks download in the background (bounded 3-at-a-time queue), with retry/reorder/rename support.
+3. "Finalize" copies each ready track into `cards/<Card Title>/NN - Track Title.m4a` (128kbps AAC, already normalized at download time) and locks the card for editing.
 4. "Push to Yoto" uploads the finalized tracks to your Yoto account and creates the card there directly — no manual drag-and-drop into `my.yotoplay.com`.
 
 No database — card/track state lives in `work/<card-id>/state.json` (JSON file is the source of truth; in-memory `Map` is just a read cache, survives dev-server reloads).
@@ -32,7 +32,7 @@ Next.js (App Router) + TypeScript + Tailwind v4. Plain route handlers under `app
 ## Key files
 
 - [lib/jobs.ts](lib/jobs.ts) — Card/Track types, state persistence, processing queue, finalize logic, post-finalize cleanup.
-- [lib/ytdlp.ts](lib/ytdlp.ts) — `yt-dlp`/`ffmpeg` wrappers: metadata fetch, audio download + loudness normalization (64kbps AAC `.m4a`), binary presence check (`checkBinaries`).
+- [lib/ytdlp.ts](lib/ytdlp.ts) — `yt-dlp`/`ffmpeg` wrappers: metadata fetch, audio download (128kbps AAC `.m4a`, matching Yoto's own transcode target), binary presence check (`checkBinaries`).
 - [lib/yoto-auth.ts](lib/yoto-auth.ts) — Yoto OAuth (PKCE + loopback callback server on `127.0.0.1:8787`), token storage/refresh in `work/.yoto-auth.json`.
 - [lib/yoto-api.ts](lib/yoto-api.ts) — uploads tracks to Yoto (presigned URL → PUT → poll transcode), then creates the card via `POST /content`.
 - [lib/validate.ts](lib/validate.ts) — YouTube URL/ID parsing.

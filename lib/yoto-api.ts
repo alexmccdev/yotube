@@ -29,14 +29,21 @@ interface UploadUrlResponse {
   upload: { uploadId: string; uploadUrl: string };
 }
 
+interface TranscodedInfo {
+  duration?: number;
+  fileSize?: number;
+  channels?: string;
+  format?: string;
+}
+
 interface TranscodedResponse {
-  transcode: { transcodedSha256?: string };
+  transcode: { transcodedSha256?: string; transcodedInfo?: TranscodedInfo };
 }
 
 async function uploadAudioFile(
   accessToken: string,
   filePath: string,
-): Promise<{ transcodedSha256: string }> {
+): Promise<{ transcodedSha256: string; transcodedInfo?: TranscodedInfo }> {
   console.log(`[yoto] requesting upload URL for ${filePath}`);
   const urlRes = await fetch(`${API_BASE}/media/transcode/audio/uploadUrl`, {
     headers: { Authorization: `Bearer ${accessToken}` },
@@ -76,7 +83,7 @@ async function uploadAudioFile(
       const sha256 = body.transcode?.transcodedSha256;
       if (sha256) {
         console.log(`[yoto] transcode done for uploadId=${upload.uploadId} after ${attempt + 1} poll(s): sha256=${sha256}`);
-        return { transcodedSha256: sha256 };
+        return { transcodedSha256: sha256, transcodedInfo: body.transcode?.transcodedInfo };
       }
     } else {
       lastBody = await pollRes.text();
@@ -233,7 +240,7 @@ export async function pushCardToYoto(
   let completed = 0;
 
   await mapWithLimit(tracks, UPLOAD_CONCURRENCY, async (track) => {
-    const { transcodedSha256 } = await uploadAudioFile(accessToken, track.filePath);
+    const { transcodedSha256, transcodedInfo } = await uploadAudioFile(accessToken, track.filePath);
     const trackKey = String(track.trackNumber).padStart(2, "0");
 
     const iconMediaId = track.iconMediaId
@@ -256,9 +263,14 @@ export async function pushCardToYoto(
           title: track.title,
           trackUrl: `yoto:#${transcodedSha256}`,
           type: "audio",
-          format: "aac",
-          duration: track.duration,
-          fileSize: (await fs.stat(track.filePath)).size,
+          // Sourced from Yoto's own transcode response, not our pre-upload file — trackUrl
+          // points at Yoto's transcoded copy, and the physical player trusts these declared
+          // fields (not the actual stream) for track length, so a mismatch here made tracks
+          // play fine in the app (which reads the real stream) but appear 0s long on-device.
+          format: transcodedInfo?.format ?? "aac",
+          channels: transcodedInfo?.channels,
+          duration: transcodedInfo?.duration ?? track.duration,
+          fileSize: transcodedInfo?.fileSize ?? (await fs.stat(track.filePath)).size,
           display,
         },
       ],

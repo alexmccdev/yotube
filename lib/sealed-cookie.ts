@@ -8,7 +8,12 @@ declare global {
 
 function sessionSecret(): string {
   const configured = process.env.WEB_SESSION_SECRET;
-  if (configured) return configured;
+  if (configured) {
+    if (process.env.NODE_ENV === "production" && Buffer.byteLength(configured, "utf8") < 32) {
+      throw new Error("WEB_SESSION_SECRET must be at least 32 bytes in production");
+    }
+    return configured;
+  }
   if (process.env.NODE_ENV === "production") {
     throw new Error("WEB_SESSION_SECRET is required in production");
   }

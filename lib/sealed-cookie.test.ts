@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { openCookie, sealCookie } from "./sealed-cookie";
 
 describe("sealed cookies", () => {
@@ -20,5 +20,15 @@ describe("sealed cookies", () => {
     const sealed = sealCookie({ value: "safe" });
     const tampered = `${sealed.slice(0, -1)}${sealed.endsWith("a") ? "b" : "a"}`;
     expect(openCookie(tampered)).toBeUndefined();
+  });
+
+  it("rejects a weak production secret", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    process.env.WEB_SESSION_SECRET = "too-short";
+    try {
+      expect(() => sealCookie({ value: "safe" })).toThrow("at least 32 bytes");
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });

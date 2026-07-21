@@ -5,7 +5,9 @@ import { execa } from "execa";
 
 const API_BASE = "https://api.yotoplay.com";
 const FORMAT = "bestaudio[ext=m4a]";
-const INGEST_TIMEOUT_MS = 270_000;
+// Leave enough time for the route to serialize an error before Vercel Hobby's
+// 60-second function limit is reached.
+const TRANSFER_TIMEOUT_MS = 50_000;
 
 class ProcessError extends Error {
   constructor(message: string, readonly stderr: string) {
@@ -103,47 +105,52 @@ async function requestUploadUrl(accessToken: string, signal?: AbortSignal) {
   return { uploadId: upload.uploadId, uploadUrl: upload.uploadUrl };
 }
 
-async function waitForTranscode(
+export async function readTrackTranscode(
   accessToken: string,
   uploadId: string,
-  totalBytes: number,
+  source: TrackSource,
   signal?: AbortSignal,
   onProgress?: TrackIngestProgressHandler,
-) {
-  for (let attempt = 0; attempt < 48; attempt++) {
-    onProgress?.({ phase: "processing", totalBytes, processingAttempt: attempt + 1 });
-    const response = await fetch(`${API_BASE}/media/upload/${uploadId}/transcoded?loudnorm=false`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-      signal,
-    });
-    if (response.ok) {
-      const body = (await response.json()) as {
-        transcode?: {
-          transcodedSha256?: string;
-          transcodedInfo?: { duration?: number; fileSize?: number; format?: string; channels?: string };
-        };
-      };
-      if (body.transcode?.transcodedSha256) return body.transcode;
-    }
-    await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(resolve, 5_000);
-      signal?.addEventListener("abort", () => {
-        clearTimeout(timer);
-        reject(new DOMException("Aborted", "AbortError"));
-      }, { once: true });
-    });
-  }
-  throw new Error("Yoto took too long to process the audio");
+): Promise<IngestedTrack | undefined> {
+  onProgress?.({ phase: "processing", totalBytes: source.fileSize });
+  const response = await fetch(
+    `${API_BASE}/media/upload/${encodeURIComponent(uploadId)}/transcoded?loudnorm=false`,
+    { headers: { Authorization: `Bearer ${accessToken}` }, signal },
+  );
+  if (!response.ok) return undefined;
+  const body = (await response.json()) as {
+    transcode?: {
+      transcodedSha256?: string;
+      transcodedInfo?: { duration?: number; fileSize?: number; format?: string; channels?: string };
+    };
+  };
+  const transcode = body.transcode;
+  if (!transcode?.transcodedSha256) return undefined;
+  const result = {
+    ...source,
+    sha256: transcode.transcodedSha256,
+    duration: transcode.transcodedInfo?.duration ?? source.duration,
+    fileSize: transcode.transcodedInfo?.fileSize ?? source.fileSize,
+    format: transcode.transcodedInfo?.format ?? "aac",
+    channels: transcode.transcodedInfo?.channels,
+  };
+  onProgress?.({
+    phase: "complete",
+    bytesTransferred: source.fileSize,
+    totalBytes: source.fileSize,
+    transferPercent: 100,
+  });
+  return result;
 }
 
 /** Streams one selected M4A directly from yt-dlp stdout to Yoto's signed PUT. */
-export async function ingestTrack(
+export async function uploadTrack(
   accessToken: string,
   source: TrackSource,
   signal?: AbortSignal,
   onProgress?: TrackIngestProgressHandler,
-): Promise<IngestedTrack> {
-  const deadline = AbortSignal.timeout(INGEST_TIMEOUT_MS);
+): Promise<string> {
+  const deadline = AbortSignal.timeout(TRANSFER_TIMEOUT_MS);
   const combinedSignal = signal ? AbortSignal.any([signal, deadline]) : deadline;
   onProgress?.({ phase: "opening", totalBytes: source.fileSize });
   const { uploadId, uploadUrl } = await requestUploadUrl(accessToken, combinedSignal);
@@ -191,28 +198,7 @@ export async function ingestTrack(
       throw new ProcessError("YouTube could not provide this audio stream", processResult.stderr.trim());
     }
     if (!uploadResponse.ok) throw new Error("Yoto rejected the streamed audio");
-    const transcode = await waitForTranscode(
-      accessToken,
-      uploadId,
-      source.fileSize,
-      combinedSignal,
-      onProgress,
-    );
-    const result = {
-      ...source,
-      sha256: transcode.transcodedSha256!,
-      duration: transcode.transcodedInfo?.duration ?? source.duration,
-      fileSize: transcode.transcodedInfo?.fileSize ?? source.fileSize,
-      format: transcode.transcodedInfo?.format ?? "aac",
-      channels: transcode.transcodedInfo?.channels,
-    };
-    onProgress?.({
-      phase: "complete",
-      bytesTransferred: source.fileSize,
-      totalBytes: source.fileSize,
-      transferPercent: 100,
-    });
-    return result;
+    return uploadId;
   } catch (error) {
     subprocess.kill("SIGTERM");
     throw new Error(safeMessage(error));

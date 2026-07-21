@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("execa", () => ({ execa: vi.fn() }));
 
 import { execa } from "execa";
-import { ingestTrack, probeTrackSource } from "./track-ingest";
+import { probeTrackSource, readTrackTranscode, uploadTrack } from "./track-ingest";
 
 const execaMock = vi.mocked(execa);
 
@@ -51,7 +51,8 @@ describe("track ingest", () => {
 
     const progress: string[] = [];
     const source = await probeTrackSource("https://youtu.be/abc");
-    await expect(ingestTrack("token", source, undefined, (event) => progress.push(event.phase))).resolves.toMatchObject({
+    await expect(uploadTrack("token", source, undefined, (event) => progress.push(event.phase))).resolves.toBe("up-1");
+    await expect(readTrackTranscode("token", "up-1", source, undefined, (event) => progress.push(event.phase))).resolves.toMatchObject({
       title: "Me at the zoo",
       sha256: "sha-1",
       duration: 20,
@@ -63,5 +64,15 @@ describe("track ingest", () => {
   it("rejects sources whose exact selected filesize is unavailable", async () => {
     execaMock.mockResolvedValueOnce({ stdout: JSON.stringify({ title: "Unknown", duration: 10 }) } as never);
     await expect(probeTrackSource("https://youtu.be/abc")).rejects.toThrow("exact M4A size");
+  });
+
+  it("reports an upload as pending while Yoto is still transcoding", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 404 })));
+    await expect(readTrackTranscode("token", "up-1", {
+      url: "https://youtu.be/abc",
+      title: "Pending",
+      duration: 10,
+      fileSize: 123,
+    })).resolves.toBeUndefined();
   });
 });

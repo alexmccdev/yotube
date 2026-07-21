@@ -27,8 +27,65 @@ async function jsonRequest<T>(url: string, init?: RequestInit): Promise<T> {
 
 type TrackStreamEvent =
   | { type: "progress"; progress: TrackIngestProgress | { phase: "authorizing"; totalBytes: number } }
-  | { type: "result"; result: IngestedTrack }
+  | { type: "uploaded"; uploadId: string }
   | { type: "error"; error: string };
+
+const TRANSCODE_POLL_INTERVAL_MS = 5_000;
+const TRANSCODE_POLL_ATTEMPTS = 120;
+
+function abortableDelay(milliseconds: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      window.clearTimeout(timer);
+      reject(new DOMException("Aborted", "AbortError"));
+    };
+    const timer = window.setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, milliseconds);
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+async function waitForYotoTrack(
+  track: BrowserTrack,
+  uploadId: string,
+  signal: AbortSignal,
+  onProgress: (progress: TrackStreamEvent & { type: "progress" }) => void,
+): Promise<IngestedTrack> {
+  for (let attempt = 1; attempt <= TRANSCODE_POLL_ATTEMPTS; attempt++) {
+    onProgress({
+      type: "progress",
+      progress: { phase: "processing", totalBytes: track.source.fileSize, processingAttempt: attempt },
+    });
+    const response = await fetch("/api/yoto/tracks", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "status", uploadId, url: track.source.url, source: track.source }),
+      signal,
+    });
+    const body = await response.json().catch(() => ({})) as {
+      error?: string;
+      status?: "processing" | "complete";
+      result?: IngestedTrack;
+    };
+    if (response.ok && body.status === "complete" && body.result) {
+      onProgress({
+        type: "progress",
+        progress: {
+          phase: "complete",
+          bytesTransferred: track.source.fileSize,
+          totalBytes: track.source.fileSize,
+          transferPercent: 100,
+        },
+      });
+      return body.result;
+    }
+    if (response.status !== 202) throw new Error(body.error ?? "Yoto processing check failed");
+    await abortableDelay(TRANSCODE_POLL_INTERVAL_MS, signal);
+  }
+  throw new Error("Yoto took too long to process the audio");
+}
 
 async function streamTrackToYoto(
   track: BrowserTrack,
@@ -48,7 +105,7 @@ async function streamTrackToYoto(
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffered = "";
-  let result: IngestedTrack | undefined;
+  let uploadId: string | undefined;
   while (true) {
     const chunk = await reader.read();
     buffered += decoder.decode(chunk.value, { stream: !chunk.done });
@@ -59,12 +116,12 @@ async function streamTrackToYoto(
       const event = JSON.parse(line) as TrackStreamEvent;
       if (event.type === "progress") onProgress(event);
       if (event.type === "error") throw new Error(event.error);
-      if (event.type === "result") result = event.result;
+      if (event.type === "uploaded") uploadId = event.uploadId;
     }
     if (chunk.done) break;
   }
-  if (!result) throw new Error("The upload ended before Yoto returned the track");
-  return result;
+  if (!uploadId) throw new Error("The upload ended before Yoto accepted the track");
+  return waitForYotoTrack(track, uploadId, signal, onProgress);
 }
 
 function TrackRow({

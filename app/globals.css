@@ -27,6 +27,15 @@ body {
   background-size: auto, 28px 28px, 28px 28px;
   color: var(--color-paper);
   font-family: var(--font-sans);
+  overflow-x: hidden;
+}
+
+.card-rail {
+  scrollbar-width: none;
+}
+
+.card-rail::-webkit-scrollbar {
+  display: none;
 }
 
 :where(a, button, input, select):focus-visible {
@@ -161,6 +170,20 @@ select:not(:disabled) {
 }
 .press:active {
   transform: scale(0.94);
+}
+
+@media (max-width: 639px) {
+  .mobile-action-dock {
+    position: sticky;
+    bottom: 0;
+    z-index: 20;
+    margin-inline: -1rem;
+    margin-bottom: -1rem;
+    padding: 0.75rem 1rem calc(0.75rem + env(safe-area-inset-bottom));
+    background: color-mix(in srgb, var(--color-paper) 94%, transparent);
+    box-shadow: 0 -12px 24px rgba(16, 33, 43, 0.08);
+    backdrop-filter: blur(12px);
+  }
 }
 
 @keyframes bounce-dot {

@@ -1,6 +1,16 @@
 # Yotube
 
-Yotube is a stateless Next.js web app that streams selected YouTube audio directly into a user's Yoto account. It does not stage audio, keep a server-side catalog, run a database, or persist OAuth tokens on the server.
+Yotube turns YouTube links into personal audio cards in a user's Yoto library. It is a stateless, browser-first Next.js app: tracks stream directly from YouTube to Yoto, while card drafts stay on the user's device. There is no Yotube account, database, or server-side media library.
+
+## Product flow
+
+1. Connect Yoto with a Client ID from the user's own Yoto developer app.
+2. Create a card, paste YouTube links, and choose a cover or track icons.
+3. Send the card to Yoto. Tracks upload one at a time and completed tracks are checkpointed for safe retries.
+
+The interface is designed as a compact audio workbench: cards form the local shelf, the selected card becomes an editable running order, and live progress explains each transfer without exposing implementation details.
+
+Sending an already-published card updates its stored Yoto card ID in place. The update action remains disabled while the browser's title, cover, ordered tracks, and icons match the last successful publish. “Create a separate copy” deliberately omits the existing ID, leaving the original card unchanged and making the new copy the one this browser edits next. If an in-place update discovers that the original card was deleted in Yoto, Yotube automatically creates and remembers a replacement.
 
 ## Data model
 
@@ -14,7 +24,9 @@ Clearing browser site data removes the local catalog and login cookie. It does n
 
 ## Local development
 
-Requirements: Node.js 22+ and `yt-dlp` on `PATH`. Each user supplies their own Yoto developer application Client ID in the browser onboarding.
+Requirements: Node.js 24 and `yt-dlp` on `PATH`. Each user supplies their own Yoto developer application Client ID in the browser onboarding.
+
+Local development always uses `YT_DLP_PATH` when set, otherwise it runs `yt-dlp` from `PATH`. The Linux executable under `vendor/` is deployment-only and is used only when Vercel sets its runtime environment.
 
 ```bash
 npm install
@@ -61,3 +73,16 @@ The deployment is public. There is intentionally no Yotube account or server-hel
 - `app/api/youtube/metadata`, `app/api/yoto/tracks`, `app/api/yoto/cards`, `app/api/yoto/icons` — narrow stateless route seams.
 
 The browser-first Next.js app is the only supported product surface. The retired desktop implementation remains available in git history.
+
+## Verification
+
+Before shipping a change, run:
+
+```bash
+npx tsc --noEmit
+npx eslint .
+npm test
+npm run build
+```
+
+For interface changes, also exercise onboarding, link normalization, browser persistence, upload progress, and the empty-card state in a local production build. Do not trigger a real Yoto upload during a smoke test unless the connected account owner explicitly intends it.

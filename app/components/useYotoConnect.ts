@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { readStoredYotoClientId, storeYotoClientId } from "@/lib/yoto-client-id";
 
 /** Kicks off the Yoto OAuth flow and polls /api/yoto/status until it connects, errors,
  *  or times out. Shared by the header status widget and the getting-started checklist. */
@@ -15,18 +16,38 @@ export function useYotoConnect(onConnected?: () => void) {
     };
   }, []);
 
-  const connect = useCallback(async () => {
+  const connect = useCallback(async (suppliedClientId?: string) => {
     setConnecting(true);
     setError(null);
-    const res = await fetch("/api/yoto/connect", { method: "POST" });
+    const clientId = suppliedClientId === undefined
+      ? readStoredYotoClientId()
+      : storeYotoClientId(suppliedClientId);
+    if (!clientId) {
+      setConnecting(false);
+      setError("Enter your Yoto Client ID first");
+      return;
+    }
+    const authorizeWindow = window.open("about:blank", "_blank");
+    if (!authorizeWindow) {
+      setConnecting(false);
+      setError("Allow pop-ups for this site, then connect again");
+      return;
+    }
+    authorizeWindow.opener = null;
+    const res = await fetch("/api/yoto/connect", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ clientId }),
+    });
     const body = await res.json().catch(() => ({}));
     if (!res.ok) {
+      authorizeWindow.close();
       setConnecting(false);
       setError(body.error ?? "Failed to connect");
       return;
     }
 
-    window.open(body.authorizeUrl, "_blank");
+    authorizeWindow.location.replace(body.authorizeUrl);
 
     let attempts = 0;
     pollRef.current = setInterval(async () => {

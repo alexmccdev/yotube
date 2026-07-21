@@ -2,16 +2,17 @@
   "name": "yotube",
   "version": "0.1.0",
   "private": true,
-  "main": "electron/main.js",
+  "description": "Turn YouTube links into audio cards for Yoto",
   "scripts": {
+    "postinstall": "node scripts/install-ytdlp.mjs",
     "dev": "next dev -H 127.0.0.1",
     "build": "next build",
     "start": "next start -H 127.0.0.1",
     "lint": "eslint",
-    "test": "vitest run",
-    "electron": "electron .",
-    "electron:build": "next build && PYTHON_PATH=\"$PWD/build/python3-dmg-wrapper.sh\" electron-builder",
-    "electron:dist": "next build && PYTHON_PATH=\"$PWD/build/python3-dmg-wrapper.sh\" electron-builder --publish never"
+    "test": "vitest run"
+  },
+  "engines": {
+    "node": ">=22"
   },
   "dependencies": {
     "execa": "^9.6.1",
@@ -25,38 +26,10 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@vitejs/plugin-react": "^6.0.3",
-    "electron": "^33.4.11",
-    "electron-builder": "^25.1.8",
     "eslint": "^9",
     "eslint-config-next": "16.2.9",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^4.1.9"
-  },
-  "build": {
-    "appId": "dev.alexmcc.yotube",
-    "productName": "Yotube",
-    "files": [
-      "electron/**/*",
-      "build/icon.png",
-      ".next/**/*",
-      "public/**/*",
-      "next.config.ts",
-      "package.json",
-      "node_modules/**/*"
-    ],
-    "afterSign": "build/afterSign.js",
-    "mac": {
-      "category": "public.app-category.utilities",
-      "icon": "build/icon.icns",
-      "identity": null
-    },
-    "win": {
-      "icon": "build/icon.ico"
-    },
-    "linux": {
-      "icon": "build/icon.png",
-      "category": "Utility"
-    }
   }
 }

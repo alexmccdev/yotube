@@ -26,10 +26,8 @@ export function isValidVideoId(value: string): boolean {
  * after `v=`) and returns a canonical watch URL, or undefined if neither matches.
  */
 export function normalizeYoutubeInput(value: string): string | undefined {
-  const trimmed = value.trim();
-  if (isYoutubeUrl(trimmed)) return trimmed;
-  if (VIDEO_ID_PATTERN.test(trimmed)) return `https://www.youtube.com/watch?v=${trimmed}`;
-  return undefined;
+  const id = extractVideoId(value);
+  return id ? `https://www.youtube.com/watch?v=${id}` : undefined;
 }
 
 /**

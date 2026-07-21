@@ -1,15 +1,33 @@
-import { disconnect, startConnectYotoAccount } from "@/lib/yoto-auth";
+import { NextRequest, NextResponse } from "next/server";
+import { beginYotoSession } from "@/lib/yoto-session";
+import { clearFlowCookie, clearSessionCookie, setFlowCookie } from "@/lib/yoto-route-session";
+import { isSameOrigin } from "@/lib/route-safety";
 
-export async function POST() {
+export async function POST(request: NextRequest) {
+  if (!isSameOrigin(request)) return NextResponse.json({ error: "Cross-site request rejected" }, { status: 403 });
   try {
-    const { authorizeUrl } = await startConnectYotoAccount();
-    return Response.json({ authorizeUrl });
+    const body = await request.json().catch(() => ({}));
+    const clientId = typeof body.clientId === "string" ? body.clientId : "";
+    const { authorizeUrl, flowCookie } = await beginYotoSession(
+      request.url,
+      clientId,
+      request.headers.get("origin"),
+    );
+    const response = NextResponse.json({ authorizeUrl });
+    setFlowCookie(response, request, flowCookie);
+    return response;
   } catch (err) {
-    return Response.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 });
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Failed to begin Yoto login" },
+      { status: 500 },
+    );
   }
 }
 
-export async function DELETE() {
-  await disconnect();
-  return Response.json({ ok: true });
+export async function DELETE(request: NextRequest) {
+  if (!isSameOrigin(request)) return NextResponse.json({ error: "Cross-site request rejected" }, { status: 403 });
+  const response = NextResponse.json({ ok: true });
+  clearSessionCookie(response, request);
+  clearFlowCookie(response, request);
+  return response;
 }

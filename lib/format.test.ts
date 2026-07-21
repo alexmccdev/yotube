@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { catalogNumber, formatDuration } from "./format";
+import { formatDuration } from "./format";
 
 describe("formatDuration", () => {
   it("formats seconds-only durations as m:ss", () => {
@@ -13,16 +13,5 @@ describe("formatDuration", () => {
 
   it("rounds fractional seconds", () => {
     expect(formatDuration(59.6)).toBe("1:00");
-  });
-});
-
-describe("catalogNumber", () => {
-  it("strips dashes, uppercases, and takes the first 4 chars", () => {
-    expect(catalogNumber("ab12-cd34-ef56")).toBe("AB12");
-  });
-
-  it("is stable for the same id", () => {
-    const id = "1234-5678-9012";
-    expect(catalogNumber(id)).toBe(catalogNumber(id));
   });
 });

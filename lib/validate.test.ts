@@ -22,9 +22,18 @@ describe("isYoutubeUrl", () => {
 });
 
 describe("normalizeYoutubeInput", () => {
-  it("passes through a full youtube url unchanged", () => {
-    const url = "https://www.youtube.com/watch?v=jNQXAC9IVRw";
-    expect(normalizeYoutubeInput(url)).toBe(url);
+  it("cleans a full youtube url to its canonical watch form", () => {
+    expect(
+      normalizeYoutubeInput(
+        "https://www.youtube.com/watch?v=jNQXAC9IVRw&list=PL123&utm_source=share",
+      ),
+    ).toBe("https://www.youtube.com/watch?v=jNQXAC9IVRw");
+  });
+
+  it("cleans a short youtube url to its canonical watch form", () => {
+    expect(normalizeYoutubeInput("https://youtu.be/jNQXAC9IVRw?t=14")).toBe(
+      "https://www.youtube.com/watch?v=jNQXAC9IVRw",
+    );
   });
 
   it("expands a bare 11-char video id into a canonical watch url", () => {

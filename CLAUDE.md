@@ -1,77 +1,65 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
 @AGENTS.md
 
-## What this is
+## Product
 
-A local, single-user Next.js app that rips YouTube audio via `yt-dlp`/`ffmpeg`, organizes it into Yoto-card-ready `.m4a` tracks (128kbps AAC, matching Yoto's own transcode target — no ID3 tagging, Yoto gets titles from the JSON payload instead), and pushes finished cards straight into the user's Yoto account. No database — card/track state lives in `work/<card-id>/state.json` (JSON file is the source of truth; the in-memory `Map` in [lib/jobs.ts](lib/jobs.ts) is just a read cache that survives dev-server reloads).
+Yotube is a browser-first Next.js app that turns YouTube links into audio cards in a user's own Yoto account. This web workflow is the sole supported product surface.
+
+The app deliberately has no database, account system, server-side catalog, or staged media files:
+
+- The Browser Catalog and each user's Yoto Client ID persist in versioned `localStorage`.
+- Yoto OAuth tokens live in an encrypted, `HttpOnly`, `SameSite=Lax` cookie with no server-side session record.
+- `yt-dlp` sends the selected M4A to stdout and the Track Ingest Module streams it directly to Yoto's signed upload URL.
+- Yoto owns the published media and cards. Clearing browser data removes only the local catalog and login cookie.
+
+Read [CONTEXT.md](CONTEXT.md) before changing domain behavior or terminology.
 
 ## Commands
 
 ```bash
-npm run dev              # start dev server on :3000 (Next refuses a second instance per project dir)
-npm run build             # production build
-npm run lint               # eslint
-npm test                     # vitest run (all *.test.ts, node environment)
-npx vitest run lib/jobs.test.ts   # run a single test file
-npx tsc --noEmit          # typecheck
+npm run dev
+npm run build
+npm run lint
+npm test
+npx tsc --noEmit
+npx vitest run lib/<module>.test.ts
 ```
 
-Verification pattern after changes: `npx tsc --noEmit` + `npx eslint .` (both clean) + a live functional check against the running dev server. `electron/**` is excluded from eslint.
+After adding an `app/api/**/route.ts` file, regenerate Next's route types before typechecking if `.next` contains stale route declarations:
 
-After adding new `app/api/.../route.ts` files, run `rm -rf .next && npx next typegen` before `tsc --noEmit` to avoid phantom `RouteContext` errors.
+```bash
+npx next typegen
+```
 
 ## Architecture
 
-Plain route handlers under `app/api/` (no Hono — tried it, removed it, not worth it for ~10 small endpoints).
+- [app/page.tsx](app/page.tsx) is the Browser Catalog UI and coordinates the serialized upload workflow.
+- [lib/browser-catalog.ts](lib/browser-catalog.ts) owns the versioned localStorage data model and migrations.
+- [lib/yoto-session.ts](lib/yoto-session.ts) owns per-user PKCE login, sealed cookie sessions, and token refresh.
+- [lib/track-ingest.ts](lib/track-ingest.ts) probes one source and streams one track directly to Yoto.
+- [lib/yoto-publisher.ts](lib/yoto-publisher.ts) materializes icons and creates or updates an ordered Yoto Card.
+- `app/api/youtube/metadata` and `app/api/yoto/**` are narrow, stateless route seams around those modules.
 
-- [lib/jobs.ts](lib/jobs.ts) — `Card`/`Track` types, JSON state persistence, bounded-concurrency (3) processing queue, finalize logic, post-finalize icon/cover auto-assignment. This is the core module; almost everything else feeds into or reads from it.
-- [lib/ytdlp.ts](lib/ytdlp.ts) — `yt-dlp`/`ffmpeg` wrappers: metadata fetch, audio download (128kbps AAC, matching Yoto's own transcode target). No ID3 tagging — Yoto gets track titles from the JSON payload in `pushCardToYoto`, not file metadata, so finalize just copies the file.
-- [lib/yoto-auth.ts](lib/yoto-auth.ts) — Yoto OAuth (PKCE + loopback callback server on `127.0.0.1:8787`), token storage/refresh in `work/.yoto-auth.json`.
-- [lib/yoto-api.ts](lib/yoto-api.ts) — uploads tracks to Yoto (presigned URL → PUT → poll transcode), then creates the card via `POST /content`.
-- [lib/stage.ts](lib/stage.ts) — derives the 4-stage lifecycle UI (created/editing/staged/on-yoto) from card/track state.
-- [lib/validate.ts](lib/validate.ts) — YouTube URL/ID parsing.
-- [lib/format.ts](lib/format.ts) — duration formatting, cosmetic catalog numbers.
-- [lib/track-status.ts](lib/track-status.ts) — the `TrackStatus` union shared across jobs/stage/UI.
-- [lib/onboarding.ts](lib/onboarding.ts) — versioned localStorage read/write (`yotube:onboarding:v1`) for onboarding-hint view counts.
-- Routes: [app/new-card/page.tsx](app/new-card/page.tsx) (new card), [app/cards/page.tsx](app/cards/page.tsx) (library list), [app/cards/[id]/page.tsx](app/cards/[id]/page.tsx) (card detail — reorder/rename/retry/finalize/push), `app/api/cards/...` (REST), `app/api/yoto/...` (connect/status).
+Keep browser-owned state in the Browser Catalog. Do not introduce server persistence, temporary media files, or a shared Yoto Client ID. Each user must connect with their own Yoto developer application.
 
-### Card lifecycle
+## Local configuration
 
-Card states: draft (`finalized: false`) → tracks download through `queued → fetching → downloading → ready` (or `error`) — → "Finalize" copies each ready track's file into `cards/<Card Title>/NN - Track Title.m4a`, marks it `done`, and sets `finalized: true` → "Push to Yoto" uploads and sets `yotoCardId`. A finalized card is locked (`isLocked()` in jobs.ts) — editing requires `unstageCard()` first, and unlinking from Yoto (`clearYotoCardId()`) also unstages it since the linked card no longer reflects local edits.
+Create `.env.local` with:
 
-### Yoto integration
+```dotenv
+WEB_SESSION_SECRET=a_random_secret_at_least_32_characters_long
+APP_ORIGIN=http://127.0.0.1:3000
+```
 
-Uses Yoto's official developer API ([yoto.dev/api](https://yoto.dev/api/)). Auth is account-level, not per-card — connected once from the header (red/green dot indicates status). Client is registered at [dashboard.yoto.dev](https://dashboard.yoto.dev/) with `YOTO_CLIENT_ID` in `.env.local` (gitignored) and callback URL `http://127.0.0.1:8787/callback`.
+Every user registers `http://127.0.0.1:3000/api/yoto/callback` in their own Yoto developer application and enters that application's Client ID during onboarding. Production uses the same flow with `<APP_ORIGIN>/api/yoto/callback`.
 
-### Onboarding
+## Verification
 
-First-time-user guidance is progressive, not a wizard/modal, and needs no new API routes — it reads the three status signals that already existed (`GET /api/health` → `{ ytDlpOk, ffmpegOk }`, `GET /api/settings` → `{ clientId }`, `GET /api/yoto/status` → `{ connected, error }`).
-
-- [app/components/GettingStarted.tsx](app/components/GettingStarted.tsx) — banner on the library home (`/`) with three live steps (deps ready / client ID set / Yoto connected). Polls health+settings every 3s; auto-hides once all three are true (no dismiss state to track).
-- [app/components/DependencyBanner.tsx](app/components/DependencyBanner.tsx) — global, mounted in [app/layout.tsx](app/layout.tsx); independent of the checklist, warns (doesn't block) when `yt-dlp`/`ffmpeg` is missing from `$PATH`. Session-dismissible via `sessionStorage`.
-- [app/components/useYotoStatus.ts](app/components/useYotoStatus.ts) — single module-level store polling `/api/yoto/status` every 3s, shared via `useSyncExternalStore` by the header pill, the checklist, and the card detail page. Without this, connecting from one of them wouldn't be reflected in the others without a page reload — each used to poll independently.
-- [app/components/useYotoConnect.ts](app/components/useYotoConnect.ts) — OAuth connect/poll flow, shared by the header widget and the checklist's "Connect Yoto" step.
-- [app/components/Hint.tsx](app/components/Hint.tsx) — contextual tips capped at `maxViews` (default 3) per `hintKey`, tracked in `lib/onboarding.ts`'s localStorage state. This is the "less guidance as the user gains experience" mechanism. Placed near the URL input and finalize button in the card editor, and the library empty state.
-- [app/components/useOnboarding.ts](app/components/useOnboarding.ts) — `useMounted()`/`useOnboardingState()` built on `useSyncExternalStore` against `lib/onboarding.ts`, rather than `useState`+`useEffect`, to satisfy the `react-hooks/set-state-in-effect` lint rule and avoid SSR hydration mismatches in one move.
-
-## Design system
-
-"Library card-catalog" identity — dark ink page background, paper-colored index-card panels with a brass left-tab accent and a cosmetic catalog number. Fraunces for titles, IBM Plex Sans for UI text, IBM Plex Mono for all data (durations, counts, status, catalog numbers).
+For user-facing work, run `npx next typegen`, `npx tsc --noEmit`, `npx eslint .`, `npm test`, and `npm run build`, then check the live browser workflow. A real upload requires the user's Yoto session and is not safe to simulate silently.
 
 ## Known limitations
 
-- Age-restricted videos fail (`yt-dlp`: "Sign in to confirm your age") — no browser cookies are passed to `yt-dlp`.
-- Single-user, local-only — no auth on the app itself, no multi-card-library sharing.
-
-## Electron app
-
-`npm run electron` runs the packaged-style app against the dev build; `npm run electron:build`/`electron:dist` package it via `electron-builder` into `dist/` (requires `PYTHON_PATH` pointed at [build/python3-dmg-wrapper.sh](build/python3-dmg-wrapper.sh)). On macOS, packaged app data lives under `~/Library/Application Support/Yotube/` (see [electron/main.js](electron/main.js)) — separate from the repo's `work/`/`cards/` dirs used by `npm run dev`.
-
-Two local-build quirks this repo works around:
-- electron-builder skips code signing without a paid Developer ID cert, leaving the `.app` with a stale signature that fails to launch on Apple Silicon — [build/afterSign.js](build/afterSign.js) ad-hoc re-signs it after every build.
-- Homebrew's `python3` pyexpat links against a libexpat newer than macOS ships, breaking dmg-builder — [build/python3-dmg-wrapper.sh](build/python3-dmg-wrapper.sh) points it at Homebrew's own `expat` lib instead.
-
-`build/install-hooks.sh` (run once) enables a `post-commit` git hook that rebuilds and reinstalls `/Applications/Yotube.app` in the background after every commit (zip target only). Logs to `build/post-commit-install.log`.
+- Age-restricted or sign-in-gated YouTube sources can fail because browser cookies are not passed to `yt-dlp`.
+- The catalog belongs to one browser profile and is not synchronized between devices.
+- Vercel function duration and bandwidth limits still apply even though media is never staged on disk.

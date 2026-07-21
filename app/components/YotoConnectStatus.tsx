@@ -1,14 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import LoadingDots from "@/app/components/LoadingDots";
-import { useYotoConnect } from "@/app/components/useYotoConnect";
 import { useYotoStatus } from "@/app/components/useYotoStatus";
 
 export default function YotoConnectStatus() {
   const { connected, setConnected } = useYotoStatus();
   const [menuOpen, setMenuOpen] = useState(false);
-  const { connect, connecting, error } = useYotoConnect(() => setConnected(true));
 
   const disconnectAccount = async () => {
     setMenuOpen(false);
@@ -50,17 +47,16 @@ export default function YotoConnectStatus() {
   }
 
   return (
-    <div className="flex items-center gap-2">
-      {error && <span className="font-mono text-xs text-red-400">{error}</span>}
-      <button
-        type="button"
-        disabled={connecting}
-        onClick={connect}
-        className="press font-mono text-xs uppercase tracking-wider text-paper/70 hover:text-brass transition-colors disabled:opacity-50 flex items-center gap-1.5"
-      >
-        <span className="h-1.5 w-1.5 rounded-full bg-red-500 shrink-0" />
-        {connecting ? <LoadingDots label="Connecting" /> : "Connect Yoto"}
-      </button>
-    </div>
+    <button
+      type="button"
+      onClick={() => {
+        document.getElementById("yoto-client-id")?.scrollIntoView({ behavior: "smooth", block: "center" });
+        document.getElementById("yoto-client-id")?.focus({ preventScroll: true });
+      }}
+      className="press font-mono text-xs uppercase tracking-wider text-paper/70 hover:text-brass transition-colors flex items-center gap-1.5"
+    >
+      <span className="h-1.5 w-1.5 rounded-full bg-red-500 shrink-0" />
+      Set up Yoto
+    </button>
   );
 }

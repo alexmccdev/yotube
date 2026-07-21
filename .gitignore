@@ -17,17 +17,15 @@
 /.next/
 /out/
 
-# electron-builder output
+# retired desktop build output and local data (kept out of source control)
 /dist/
 /build/post-commit-install.log
+/cards/
+/work/
 
 # misc
 .DS_Store
 *.pem
-
-# app data
-/cards/
-/work/
 
 # debug
 npm-debug.log*
@@ -40,6 +38,7 @@ yarn-error.log*
 
 # vercel
 .vercel
+/vendor/yt-dlp
 
 # typescript
 *.tsbuildinfo

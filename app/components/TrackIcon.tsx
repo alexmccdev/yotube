@@ -61,23 +61,25 @@ export default function TrackIcon({
         type="button"
         onClick={togglePicker}
         disabled={!editable}
-        title={!editable ? undefined : iconUrl ? "Click to change icon" : "Click to find an icon"}
-        className={`press w-8 h-8 shrink-0 rounded-sm border border-ink-text/15 bg-ink-text/5 flex items-center justify-center hover:border-brass transition-colors disabled:opacity-50 disabled:hover:border-ink-text/15 overflow-hidden ${open ? "z-[999]" : ""}`}
+        aria-label={!editable ? undefined : iconUrl ? "Change track icon" : "Choose track icon"}
+        aria-expanded={editable ? open : undefined}
+        className={`press flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-sm border border-ink-text/15 bg-ink-text/5 transition-colors hover:border-brass disabled:opacity-50 disabled:hover:border-ink-text/15 ${open ? "z-[999]" : ""}`}
       >
         {iconUrl ? (
           <img src={iconUrl} alt="" className="w-full h-full" style={{ imageRendering: "pixelated" }} />
         ) : (
-          <span className="font-mono text-[9px] text-ink-text/30">+</span>
+          <span className="font-mono text-sm text-ink-text/35">+</span>
         )}
       </button>
 
       {open && (
-        <div className="pop-in absolute z-[999] top-full left-0 mt-1 w-56 bg-paper text-ink-text border border-ink-text/15 rounded-sm shadow-xl p-2 flex flex-col gap-2" style={{ transformOrigin: "top left" }}>
+        <div className="pop-in absolute left-0 top-full z-[999] mt-1 flex w-60 flex-col gap-2 rounded-sm border border-ink-text/15 bg-paper p-3 text-ink-text shadow-xl" style={{ transformOrigin: "top left" }}>
           <div className="flex items-center gap-1">
             <input
               autoFocus
-              className="flex-1 font-mono text-[10px] border-b border-ink-text/20 focus:border-brass outline-none bg-transparent px-0.5"
-              placeholder="Search icon…"
+              aria-label="Search track icons"
+              className="flex-1 border-b border-ink-text/20 bg-transparent px-0.5 py-1 font-mono text-[11px] outline-none focus:border-brass"
+              placeholder="Search icons"
               value={keyword}
               onChange={(e) => setKeyword(e.target.value)}
               onKeyDown={(e) => {
@@ -88,16 +90,16 @@ export default function TrackIcon({
             <button
               type="button"
               onClick={() => search(keyword.trim() || undefined)}
-              className="font-mono text-[10px] uppercase text-ink-text/50 hover:text-brass transition-colors shrink-0"
+              className="shrink-0 rounded-sm bg-ink px-2 py-1 font-mono text-[10px] text-paper transition-colors hover:bg-brass hover:text-ink-text"
             >
               Go
             </button>
           </div>
 
           {loading ? (
-            <p className="font-mono text-[10px] text-ink-text/40 text-center py-2">Searching…</p>
+            <p className="py-2 text-center font-mono text-[10px] text-ink-text/40">Searching icons…</p>
           ) : candidates.length === 0 ? (
-            <p className="font-mono text-[10px] text-ink-text/40 text-center py-2">No matches</p>
+            <p className="py-2 text-center font-mono text-[10px] text-ink-text/40">No matching icons</p>
           ) : (
             <div className="grid grid-cols-5 gap-1 max-h-40 overflow-y-auto">
               {candidates.map((c) => (

@@ -36,14 +36,14 @@ function formatElapsed(milliseconds: number): string {
 
 function phaseCopy(progress: UploadDocketState) {
   switch (progress.phase) {
-    case "authorizing": return ["Checking the route", "Confirming your Yoto session"];
-    case "opening": return ["Opening the line", "Yoto issued a direct upload destination"];
-    case "streaming": return ["Audio in transit", "YouTube → Yoto · nothing staged here"];
-    case "processing": return ["Yoto is processing", "The transfer is complete; Yoto is preparing playback"];
-    case "publishing": return ["Filing the card", "Assigning the cover, icons, and ordered tracks"];
-    case "complete": return ["Filed on Yoto", "The full route completed"];
-    case "cancelled": return ["Route stopped", "Completed Yoto media remains checkpointed"];
-    case "error": return ["Route needs attention", progress.message ?? "Retry to continue from the last checkpoint"];
+    case "authorizing": return ["Checking Yoto", "Confirming your connection"];
+    case "opening": return ["Starting the transfer", "Preparing a secure destination in Yoto"];
+    case "streaming": return ["Sending audio", "YouTube → Yoto · nothing stored by Yotube"];
+    case "processing": return ["Preparing playback", "The transfer is complete; Yoto is processing the audio"];
+    case "publishing": return ["Saving the card", "Adding the cover, icons, and track order"];
+    case "complete": return ["Ready in Yoto", "The card and all tracks are available"];
+    case "cancelled": return ["Sending stopped", "Completed tracks are saved for the next attempt"];
+    case "error": return ["Sending needs attention", progress.message ?? "Try again to continue from the last completed track"];
   }
 }
 
@@ -66,7 +66,7 @@ export default function UploadDocket({
         </div>
         <div className="min-w-0">
           <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-text/45">
-            {progress.trackIndex ? `Track ${progress.trackIndex} of ${progress.trackCount}` : "Card route"}
+            {progress.trackIndex ? `Track ${progress.trackIndex} of ${progress.trackCount}` : "Yoto card"}
           </p>
           <h3 className="font-display text-lg font-semibold leading-tight">{heading}</h3>
           <p className="text-xs text-ink-text/50 truncate">{progress.trackTitle ?? detail}</p>
@@ -90,7 +90,7 @@ export default function UploadDocket({
         {progress.phase === "processing" ? (
           <span className="flex items-center gap-2 text-ink-text/75">
             <span className="h-1.5 w-1.5 rounded-full bg-brass animate-pulse" />
-            Waiting for Yoto{progress.processingAttempt ? ` · check ${progress.processingAttempt}` : ""}
+            Checking Yoto{progress.processingAttempt ? ` · ${progress.processingAttempt}` : ""}
           </span>
         ) : null}
         <span className="normal-case tracking-normal text-ink-text/45">{detail}</span>

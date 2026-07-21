@@ -21,23 +21,23 @@ export default function YotoOnboarding() {
   return (
     <section
       aria-labelledby="connect-yoto-title"
-      className="file-in overflow-hidden rounded-sm border-l-4 border-brass bg-ink-panel shadow-xl shadow-black/20"
+      className="file-in overflow-hidden rounded-md border border-signal/20 border-t-4 border-t-signal bg-ink-panel shadow-xl shadow-black/20"
     >
       <div className="grid gap-6 p-5 lg:grid-cols-[1.08fr_0.92fr] lg:items-start sm:p-7">
         <div className="max-w-xl">
-          <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-brass">
+          <p className="font-mono text-[10px] font-medium tracking-[0.16em] text-signal">
             One-time setup
           </p>
-          <h2 id="connect-yoto-title" className="mt-1 font-display text-2xl font-semibold text-paper">
-            Let’s connect your Yoto account
+          <h2 id="connect-yoto-title" className="mt-1 font-display text-2xl font-semibold tracking-[-0.025em] text-paper sm:text-3xl">
+            Connect Yoto once
           </h2>
           <p className="mt-2 max-w-lg text-base leading-relaxed text-paper/75">
-            This lets you send the cards you make here to your Yoto library. You only need to do this once on this device.
+            Yoto needs a developer app so this browser can send finished cards to your library. Your Client ID is not a password.
           </p>
 
           <ol className="mt-5 flex flex-col gap-4" aria-label="Yoto connection steps">
-            <li className="flex gap-3 rounded-sm bg-black/10 p-3">
-              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brass font-mono text-xs font-semibold text-ink-text">1</span>
+            <li className="flex gap-3 border-l border-paper/15 pl-3">
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-signal/40 font-mono text-xs font-semibold text-signal">1</span>
               <div>
                 <h3 className="font-semibold text-paper">Create a Yoto developer app</h3>
                 <p className="mt-0.5 text-sm leading-relaxed text-paper/70">
@@ -49,8 +49,8 @@ export default function YotoOnboarding() {
                 </p>
               </div>
             </li>
-            <li className="flex gap-3 rounded-sm bg-black/10 p-3">
-              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brass font-mono text-xs font-semibold text-ink-text">2</span>
+            <li className="flex gap-3 border-l border-paper/15 pl-3">
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-signal/40 font-mono text-xs font-semibold text-signal">2</span>
               <div className="min-w-0 flex-1">
                 <h3 className="font-semibold text-paper">Tell Yoto where to send you back</h3>
                 <p className="mt-0.5 text-sm leading-relaxed text-paper/70">
@@ -65,7 +65,7 @@ export default function YotoOnboarding() {
                       setCopied(true);
                       window.setTimeout(() => setCopied(false), 1500);
                     }}
-                    className="press shrink-0 rounded-sm border border-brass/40 px-2 py-1.5 font-mono text-[9px] uppercase tracking-wider text-brass hover:border-brass hover:text-paper"
+                    className="press shrink-0 rounded-sm border border-signal/40 px-2 py-1.5 font-mono text-[10px] text-signal hover:border-signal hover:text-paper"
                   >
                     {copied ? "Copied" : "Copy"}
                   </button>
@@ -76,7 +76,7 @@ export default function YotoOnboarding() {
         </div>
 
         <form
-          className="rounded-sm border border-paper/15 bg-paper/[0.06] p-5"
+          className="rounded-sm border border-paper/15 bg-black/10 p-5"
           onSubmit={(event) => {
             event.preventDefault();
             void connect(clientId);
@@ -87,7 +87,7 @@ export default function YotoOnboarding() {
             <div className="min-w-0 flex-1">
               <h3 className="font-semibold text-paper">Paste your Client ID</h3>
               <label htmlFor="yoto-client-id" className="mt-0.5 block text-sm leading-relaxed text-paper/70">
-                Copy the long Client ID shown in your new Yoto app, then paste it below.
+                Copy the Client ID from your new Yoto app and paste it below.
               </label>
               <input
                 id="yoto-client-id"
@@ -95,19 +95,19 @@ export default function YotoOnboarding() {
                 value={clientId}
                 autoComplete="off"
                 spellCheck={false}
-                placeholder="Paste your Client ID"
+                placeholder="Client ID"
                 onChange={(event) => setClientId(storeYotoClientId(event.target.value))}
                 className="mt-2 w-full rounded-sm border border-paper/20 bg-ink px-3 py-2.5 font-mono text-sm text-paper outline-none transition-colors placeholder:text-paper/25 focus:border-brass"
               />
               <p className="mt-2 text-xs leading-relaxed text-paper/55">
-                This identifies the Yoto app you just created. It is not your password.
+                Stored in this browser and encrypted with your Yoto session cookie.
               </p>
             </div>
           </div>
           <button
             type="submit"
             disabled={connecting || !clientIdReady}
-            className="press mt-4 w-full rounded-sm bg-brass px-5 py-3 font-mono text-xs uppercase tracking-wider text-ink-text transition-colors hover:bg-paper disabled:cursor-not-allowed disabled:opacity-40"
+            className="press mt-4 w-full rounded-sm bg-brass px-5 py-3 font-mono text-xs font-medium text-ink-text transition-colors hover:bg-signal disabled:cursor-not-allowed disabled:opacity-40"
           >
             {connecting ? <LoadingDots label="Waiting for Yoto" /> : "Continue with Yoto"}
           </button>

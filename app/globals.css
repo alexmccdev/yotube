@@ -5,22 +5,38 @@
 }
 
 @theme inline {
-  --color-ink: #1b2128;
-  --color-ink-panel: #2a323b;
-  --color-paper: #f2ecda;
-  --color-paper-dim: #e4dbc2;
-  --color-brass: #c9a227;
-  --color-ink-text: #211b12;
+  --color-ink: #10212b;
+  --color-ink-panel: #18333f;
+  --color-paper: #eef3ed;
+  --color-paper-dim: #d9e3dc;
+  --color-brass: #ffb000;
+  --color-signal: #74d9c8;
+  --color-ink-text: #10212b;
 
-  --font-display: var(--font-fraunces);
+  --font-display: var(--font-plex-sans);
   --font-sans: var(--font-plex-sans);
   --font-mono: var(--font-plex-mono);
 }
 
 body {
   background: var(--color-ink);
+  background-image:
+    radial-gradient(circle at 14% -12%, rgba(116, 217, 200, 0.12), transparent 32rem),
+    linear-gradient(rgba(238, 243, 237, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(238, 243, 237, 0.025) 1px, transparent 1px);
+  background-size: auto, 28px 28px, 28px 28px;
   color: var(--color-paper);
   font-family: var(--font-sans);
+}
+
+:where(a, button, input, select):focus-visible {
+  outline: 2px solid var(--color-signal);
+  outline-offset: 3px;
+}
+
+button:not(:disabled),
+select:not(:disabled) {
+  cursor: pointer;
 }
 
 ::selection {
@@ -37,6 +53,40 @@ body {
   padding: 0.15rem 0.5rem;
   box-shadow: inset 0 0 0 2px rgba(201, 162, 39, 0.18);
   animation: stamp-down 0.45s cubic-bezier(0.2, 1.6, 0.4, 1) both;
+}
+
+.card-shell {
+  box-shadow:
+    0 26px 70px rgba(1, 10, 14, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+.route-mark {
+  display: inline-grid;
+  grid-template-columns: auto 2.6rem auto;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.route-mark::before {
+  content: "";
+  grid-column: 2;
+  grid-row: 1;
+  height: 1px;
+  background: currentColor;
+  opacity: 0.55;
+}
+
+.route-mark::after {
+  content: "";
+  grid-column: 2;
+  grid-row: 1;
+  justify-self: end;
+  width: 0.42rem;
+  height: 0.42rem;
+  border-top: 1px solid currentColor;
+  border-right: 1px solid currentColor;
+  transform: rotate(45deg);
 }
 
 .marquee-track {

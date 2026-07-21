@@ -21,22 +21,25 @@ export default function YotoConnectStatus() {
         <button
           type="button"
           onClick={() => setMenuOpen((open) => !open)}
+          aria-expanded={menuOpen}
+          aria-haspopup="menu"
           title="Yoto account"
-          className="press pop-in font-mono text-xs uppercase tracking-wider text-green-500/80 hover:text-green-400 transition-colors flex items-center gap-1.5"
+          className="press pop-in flex items-center gap-2 rounded-full border border-signal/25 bg-signal/10 px-3 py-1.5 font-mono text-[11px] text-signal transition-colors hover:border-signal/50 hover:text-paper"
         >
           <span className="h-1.5 w-1.5 rounded-full bg-green-500 shrink-0" />
-          Yoto
+          Yoto connected
         </button>
 
         {menuOpen && (
-          <div className="pop-in absolute z-10 top-full right-0 mt-1.5 w-44 bg-paper text-ink-text border border-ink-text/15 rounded-sm shadow-xl p-1.5 flex flex-col">
-            <p className="font-mono text-[10px] uppercase tracking-wider text-ink-text/40 px-2 pt-1 pb-1.5">
+          <div role="menu" className="pop-in absolute right-0 top-full z-10 mt-2 flex w-48 flex-col rounded-sm border border-ink-text/15 bg-paper p-1.5 text-ink-text shadow-xl">
+            <p className="px-2 pb-1.5 pt-1 font-mono text-[10px] text-ink-text/45">
               Account connected
             </p>
             <button
               type="button"
+              role="menuitem"
               onClick={disconnectAccount}
-              className="press text-left font-mono text-xs uppercase tracking-wider text-ink-text/60 hover:text-red-700 transition-colors px-2 py-1 rounded-sm hover:bg-ink-text/5"
+              className="press rounded-sm px-2 py-1.5 text-left font-mono text-xs text-ink-text/60 transition-colors hover:bg-red-700/10 hover:text-red-800"
             >
               Disconnect
             </button>
@@ -53,7 +56,7 @@ export default function YotoConnectStatus() {
         document.getElementById("yoto-client-id")?.scrollIntoView({ behavior: "smooth", block: "center" });
         document.getElementById("yoto-client-id")?.focus({ preventScroll: true });
       }}
-      className="press font-mono text-xs uppercase tracking-wider text-paper/70 hover:text-brass transition-colors flex items-center gap-1.5"
+      className="press flex items-center gap-2 rounded-full border border-paper/15 px-3 py-1.5 font-mono text-[11px] text-paper/70 transition-colors hover:border-signal/50 hover:text-signal"
     >
       <span className="h-1.5 w-1.5 rounded-full bg-red-500 shrink-0" />
       Set up Yoto

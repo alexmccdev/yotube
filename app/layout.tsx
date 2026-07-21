@@ -1,12 +1,6 @@
 import type { Metadata } from "next";
-import { Fraunces, IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
+import { IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
 import "./globals.css";
-
-const fraunces = Fraunces({
-  variable: "--font-fraunces",
-  subsets: ["latin"],
-  weight: ["500", "600"],
-});
 
 const plexSans = IBM_Plex_Sans({
   variable: "--font-plex-sans",
@@ -21,8 +15,8 @@ const plexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "yotube — direct to Yoto",
-  description: "Build Yoto cards from YouTube without server-side file storage",
+  title: "Yotube — YouTube audio cards for Yoto",
+  description: "Build personal Yoto audio cards from YouTube links, directly from your browser.",
 };
 
 export default function RootLayout({
@@ -33,7 +27,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${fraunces.variable} ${plexSans.variable} ${plexMono.variable} h-full antialiased`}
+      className={`${plexSans.variable} ${plexMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
         {children}

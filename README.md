@@ -55,13 +55,20 @@ APP_ORIGIN=https://your-canonical-domain.example
 WEB_SESSION_SECRET=a_random_secret_at_least_32_characters_long
 ```
 
-Every user registers `<APP_ORIGIN>/api/yoto/callback` in their own Yoto developer application. For `https://yotube.tech`, the exact callback is `https://yotube.tech/api/yoto/callback`. `APP_ORIGIN` must not have a trailing path. `WEB_SESSION_SECRET` must be stable across deployments or existing encrypted login cookies become unreadable. Generate it locally with `openssl rand -base64 32`; do not commit the value.
+Every user registers `<APP_ORIGIN>/api/yoto/callback` in their own Yoto developer application. For `https://yotube.tech`, the exact callback is `https://yotube.tech/api/yoto/callback`. `APP_ORIGIN` must not have a trailing path. `WEB_SESSION_SECRET` must be stable across deployments or existing encrypted login cookies become unreadable. Production rejects secrets shorter than 32 bytes. Generate it locally with `openssl rand -base64 32`; do not commit the value.
 
 The `postinstall` script downloads the pinned official Linux `yt-dlp` release, verifies its SHA-256 checksum, and Next's output tracing includes it only in the two routes that execute it. Track transfer declares Hobby's 60-second maximum function duration and enforces a 50-second internal deadline. Yoto transcoding is then polled with short stateless requests, so its processing time does not hold one function open. A source transfer that cannot finish within 50 seconds will still need a retry or a deployment target with longer-running compute.
 
 After the first deployment, verify `/api/youtube/metadata` with a public YouTube URL, then connect a Yoto account and send one short track before relying on longer media. Preview deployments use the production `APP_ORIGIN` when they share its environment variables, so their OAuth redirect intentionally returns to the canonical production deployment.
 
-The deployment is public. There is intentionally no Yotube account or server-held user profile; authorization to mutate Yoto comes only from the encrypted Yoto cookie. For a higher-abuse deployment, add platform-level rate limiting or access control without introducing an application database.
+The deployment is public. There is intentionally no Yotube account or server-held user profile; authorization to mutate Yoto comes only from the encrypted Yoto cookie. Expensive routes include a per-IP, per-function-instance rate-limit backstop, but serverless instances do not share those counters. Before sharing the deployment publicly, configure the Hobby plan's single global [Vercel Firewall rate-limit rule](https://vercel.com/docs/vercel-firewall/vercel-waf/rate-limiting):
+
+1. Open the Vercel project, then **Firewall → Configure → New Rule**.
+2. Match request paths beginning with `/api/`.
+3. Choose **Rate Limit**, a **Fixed Window** of 60 seconds, a limit of 60 requests, and the IP counting key.
+4. Keep the default `429` action, save the rule, review the change, and publish it.
+
+The in-app limits are intentionally tighter for metadata lookup, upload starts, icon search, and card publishing while allowing frequent Yoto transcode status polling. A `429` response includes `Retry-After`, so clients can back off cleanly.
 
 ## Architecture
 

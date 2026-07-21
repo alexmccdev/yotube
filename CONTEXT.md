@@ -10,6 +10,9 @@ upload URLs, audio bytes, or image bytes. `localStorage` is the source of truth.
 
 A locally editable, ordered group of Tracks that can be published to Yoto. A Card moves from
 Draft, through Sending, to On Yoto. There is no Staged state in the web product.
+After publishing, a deterministic fingerprint of the title, cover, ordered tracks, ingest
+results, and icons records the last state sent to Yoto. Local-only status and error fields do
+not make a Card dirty.
 
 ## Track
 

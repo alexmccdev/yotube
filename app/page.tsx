@@ -7,8 +7,10 @@ import YotoConnectStatus from "@/app/components/YotoConnectStatus";
 import YotoOnboarding from "@/app/components/YotoOnboarding";
 import UploadDocket, { type UploadDocketState } from "@/app/components/UploadDocket";
 import {
+  cardPublishFingerprint,
   loadCatalog,
   newBrowserCard,
+  removeBrowserTrack,
   saveCatalog,
   type BrowserCard,
   type BrowserTrack,
@@ -141,6 +143,11 @@ function TrackRow({
   onRemove: () => void;
   activeProgress?: UploadDocketState;
 }) {
+  const stateLabel = track.state === "uploaded"
+    ? "On Yoto"
+    : track.state === "uploading"
+      ? "Sending"
+      : track.state === "error" ? "Needs attention" : "Ready to send";
   const findIcons = (keyword?: string) =>
     jsonRequest<IconCandidate[]>(
       `/api/yoto/icons?title=${encodeURIComponent(track.source.title)}${keyword ? `&q=${encodeURIComponent(keyword)}` : ""}`,
@@ -154,8 +161,8 @@ function TrackRow({
     });
   };
   return (
-    <li data-testid={`track-${track.id}`} className={`file-in relative flex items-center gap-3 border-t border-ink-text/10 py-3 first:border-t-0 ${open ? "z-[1000]" : "z-0"}`}>
-      <span className="font-mono text-[10px] text-ink-text/35 w-5 tabular-nums">{String(index + 1).padStart(2, "0")}</span>
+    <li data-testid={`track-${track.id}`} className={`file-in relative grid grid-cols-[2rem_2rem_minmax(0,1fr)_auto] items-center gap-3 border-t border-ink-text/10 py-3.5 first:border-t-0 ${open ? "z-[1000]" : "z-0"}`}>
+      <span className="font-mono text-sm font-medium text-ink-text/30 tabular-nums">{String(index + 1).padStart(2, "0")}</span>
       <TrackIcon
         iconUrl={track.icon?.url}
         onFetchCandidates={findIcons}
@@ -164,9 +171,9 @@ function TrackRow({
         onOpenChange={onOpen}
       />
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium">{track.source.title}</p>
-        <p className="font-mono text-[10px] uppercase tracking-wider text-ink-text/40">
-          {formatDuration(track.source.duration)} · {track.state === "uploaded" ? "On Yoto media" : track.state}
+        <p className="truncate text-sm font-semibold text-ink-text/85">{track.source.title}</p>
+        <p className="mt-0.5 font-mono text-[10px] tracking-wide text-ink-text/45">
+          {formatDuration(track.source.duration)} <span aria-hidden="true">·</span> {stateLabel}
         </p>
         {activeProgress?.phase === "streaming" && activeProgress.transferPercent !== undefined ? (
           <div className="mt-1.5 h-1 bg-ink-text/10 rounded-full overflow-hidden" aria-hidden="true">
@@ -175,7 +182,7 @@ function TrackRow({
         ) : null}
         {track.error ? <p className="text-xs text-red-700 mt-1">{track.error}</p> : null}
       </div>
-      <button type="button" onClick={onRemove} className="press font-mono text-[10px] uppercase text-ink-text/35 hover:text-red-700">Remove</button>
+      <button type="button" onClick={onRemove} aria-label={`Remove ${track.source.title}`} className="press rounded-sm px-2 py-1 font-mono text-[10px] text-ink-text/40 hover:bg-red-700/10 hover:text-red-800">Remove</button>
     </li>
   );
 }
@@ -219,6 +226,9 @@ export default function BrowserLibraryPage() {
   const cardTitleReady = selected
     ? Boolean(selected.title.trim()) && selected.title.trim().toLowerCase() !== "untitled card"
     : false;
+  const hasUnpublishedChanges = selected
+    ? cardPublishFingerprint(selected) !== selected.publishedFingerprint
+    : false;
   const replaceCard = (next: BrowserCard) => {
     next.updatedAt = new Date().toISOString();
     setCards((current) => current.map((card) => card.id === next.id ? next : card));
@@ -233,18 +243,7 @@ export default function BrowserLibraryPage() {
   const removeTrack = (cardId: string, trackId: string) => {
     setCards((current) => current.map((card) => {
       if (card.id !== cardId) return card;
-      const tracks = card.tracks.filter((track) => track.id !== trackId);
-      if (card.coverSourceTrackId !== trackId) {
-        return { ...card, updatedAt: new Date().toISOString(), tracks };
-      }
-      const fallback = tracks.find((track) => track.source.thumbnail);
-      return {
-        ...card,
-        updatedAt: new Date().toISOString(),
-        tracks,
-        coverImageUrl: fallback?.source.thumbnail,
-        coverSourceTrackId: fallback?.id,
-      };
+      return { ...removeBrowserTrack(card, trackId), updatedAt: new Date().toISOString() };
     }));
   };
   const createCard = () => {
@@ -255,7 +254,8 @@ export default function BrowserLibraryPage() {
     setOpenIcon(undefined);
   };
   const deleteCard = (card: BrowserCard) => {
-    if (!window.confirm(`Remove “${card.title}” from this list? This won’t delete anything already on Yoto.`)) return;
+    const name = card.title.trim() ? `“${card.title.trim()}”` : "this untitled card";
+    if (!window.confirm(`Remove ${name} from this browser? This won’t delete anything already on Yoto.`)) return;
     const remaining = cards.filter((item) => item.id !== card.id);
     setCards(remaining);
     setSelectedId(remaining[0]?.id);
@@ -299,12 +299,13 @@ export default function BrowserLibraryPage() {
     }
   };
 
-  const publish = async () => {
+  const publish = async ({ asCopy = false }: { asCopy?: boolean } = {}) => {
     if (!selected || selected.tracks.length === 0 || publishing) return;
     if (!cardTitleReady) {
       setNotice("Give this card a specific title before sending it to Yoto.");
       return;
     }
+    if (asCopy && !window.confirm("Create a separate card in Yoto? The current Yoto card will remain unchanged.")) return;
     setPublishing(true);
     setNotice(undefined);
     setUploadCardId(selected.id);
@@ -361,21 +362,25 @@ export default function BrowserLibraryPage() {
         overallPercent: overall(trackCount, 0.45),
         trackCount,
       });
+      const existingCardId = asCopy ? undefined : next.yotoCardId;
+      const updatingExistingCard = Boolean(existingCardId);
       const result = await jsonRequest<{ yotoCardId: string; replacedDeletedCard?: boolean }>("/api/yoto/cards", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title: next.title,
           tracks: next.tracks.map((track) => ({ ...track.ingested!, icon: track.icon })),
-          existingCardId: next.yotoCardId,
+          existingCardId,
           coverImageUrl: next.coverImageUrl,
         }),
       });
       next = { ...next, yotoCardId: result.yotoCardId };
+      next = { ...next, publishedFingerprint: cardPublishFingerprint(next) };
       replaceCard(next);
       setNotice(result.replacedDeletedCard
-        ? "The previous Yoto card was gone, so a replacement was filed with the current name."
-        : "Filed on Yoto. You can keep editing and publish again.");
+        ? "The original card was missing, so Yoto created a new copy."
+        : asCopy ? "Copy created in Yoto. The original card is unchanged."
+          : updatingExistingCard ? "Yoto card updated." : "Yoto card created.");
       setUploadProgress({ phase: "complete", overallPercent: 100, trackCount });
     } catch (error) {
       const cancelled = controller.signal.aborted;
@@ -396,43 +401,51 @@ export default function BrowserLibraryPage() {
     }
   };
 
-  if (!ready) return <main className="mx-auto max-w-5xl w-full p-8"><LoadingDots label="Opening your cards" /></main>;
+  if (!ready) return <main className="mx-auto flex min-h-screen w-full max-w-6xl items-center justify-center p-8"><LoadingDots label="Loading your cards" /></main>;
 
   return (
-    <main className="mx-auto max-w-5xl w-full p-5 sm:p-10 flex flex-col gap-7 file-in">
-      <header className="flex items-start justify-between gap-5">
-        <div>
-          <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-brass">Make cards from YouTube</p>
-          <h1 className="font-display text-4xl font-semibold">yotube</h1>
-          <p className="text-paper/60 text-sm mt-1">Turn YouTube links into audio cards you can play on Yoto.</p>
+    <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-7 p-4 pb-12 sm:p-8 lg:p-10 file-in">
+      <header className="flex flex-col items-start justify-between gap-4 border-b border-paper/10 pb-6 sm:flex-row sm:gap-5">
+        <div className="min-w-0">
+          <div className="route-mark font-mono text-[10px] font-medium tracking-[0.16em] text-signal">
+            <span>YouTube audio</span><span className="col-start-3">Yoto cards</span>
+          </div>
+          <h1 className="mt-2 font-display text-4xl font-semibold leading-none tracking-[-0.045em] sm:text-5xl">yotube</h1>
+          <p className="mt-2 max-w-xl text-sm leading-relaxed text-paper/65 sm:text-base">Build a card in your browser, then send each track straight to your Yoto library.</p>
         </div>
         <YotoConnectStatus />
       </header>
 
       <YotoOnboarding />
 
-      <div className="grid md:grid-cols-[14rem_1fr] gap-5 items-start">
-        <aside className="flex flex-col gap-2">
-          <button type="button" onClick={createCard} className="press border border-dashed border-paper/30 hover:border-brass text-paper/70 hover:text-brass rounded-sm py-3 font-mono text-xs uppercase tracking-wider">+ New card</button>
-          {cards.map((card) => (
-            <button key={card.id} type="button" onClick={() => {
+      <div className="grid items-start gap-5 md:grid-cols-[15rem_minmax(0,1fr)] lg:gap-7">
+        <aside aria-label="Your cards" className="min-w-0">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <h2 className="font-mono text-[10px] font-medium tracking-[0.16em] text-paper/45">Your cards</h2>
+            <span className="font-mono text-[10px] text-paper/35">{cards.length}</span>
+          </div>
+          <div className="flex gap-2 overflow-x-auto pb-2 md:flex-col md:overflow-visible">
+            <button type="button" onClick={createCard} className="press min-w-32 shrink-0 rounded-sm border border-dashed border-paper/30 px-4 py-3 text-left font-mono text-[11px] text-paper/70 hover:border-signal hover:text-signal md:w-full">+ New card</button>
+            {cards.map((card) => (
+            <button key={card.id} type="button" aria-pressed={card.id === selectedId} onClick={() => {
               setSelectedId(card.id);
               setNotice(undefined);
               setOpenIcon(undefined);
-            }} className={`press text-left rounded-sm border-l-4 p-3 transition-colors ${card.id === selectedId ? "bg-paper text-ink-text border-brass" : "bg-ink-panel text-paper border-paper/15 hover:border-brass"}`}>
-              <span className="block font-display font-semibold truncate">{card.title || "New card"}</span>
-              <span className="font-mono text-[10px] uppercase opacity-50">{card.tracks.length} track{card.tracks.length === 1 ? "" : "s"}{card.yotoCardId ? " · on Yoto" : ""}</span>
+            }} className={`press min-w-48 shrink-0 rounded-sm border p-3 text-left transition-colors md:w-full ${card.id === selectedId ? "border-brass bg-paper text-ink-text shadow-lg shadow-black/10" : "border-paper/10 bg-ink-panel text-paper hover:border-signal/60"}`}>
+              <span className="block truncate font-display text-sm font-semibold">{card.title || "Untitled card"}</span>
+              <span className="mt-1 block font-mono text-[10px] opacity-50">{card.tracks.length} track{card.tracks.length === 1 ? "" : "s"}{card.yotoCardId ? " · On Yoto" : ""}</span>
             </button>
           ))}
-          <p className="text-xs leading-relaxed text-paper/50 mt-2">This list stays on this device. Anything already sent to Yoto stays there.</p>
+          </div>
+          <p className="mt-2 text-xs leading-relaxed text-paper/45">Saved only in this browser. Removing a draft here never deletes a card from Yoto.</p>
         </aside>
 
         {selected ? (
-          <section className="bg-paper text-ink-text rounded-sm shadow-2xl shadow-black/30 border-l-4 border-brass overflow-visible">
-            <div className="p-5 sm:p-7 flex flex-col gap-5">
-              <div className="grid grid-cols-[5.5rem_1fr_auto] gap-4 items-start">
+          <section aria-label="Card editor" className="card-shell overflow-visible rounded-md border border-white/40 border-t-4 border-t-brass bg-paper text-ink-text">
+            <div className="flex flex-col gap-6 p-4 sm:p-7">
+              <div className="grid grid-cols-[4.75rem_minmax(0,1fr)] items-start gap-4 sm:grid-cols-[5.5rem_minmax(0,1fr)_auto]">
                 <div className="flex flex-col gap-1.5">
-                  <label htmlFor="card-cover" className="font-mono text-[9px] uppercase tracking-[0.16em] text-ink-text/45">Card image</label>
+                  <label htmlFor="card-cover" className="font-mono text-[10px] font-medium tracking-wide text-ink-text/45">Cover</label>
                   <div
                     role="img"
                     aria-label={selected.coverImageUrl ? "Selected card image" : "No card image selected"}
@@ -463,23 +476,29 @@ export default function BrowserLibraryPage() {
                   </select>
                 </div>
                 <div className="min-w-0 flex flex-col gap-1.5">
-                  <label htmlFor="card-title" className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-text/55">Card name</label>
+                  <label htmlFor="card-title" className="font-mono text-[10px] font-medium tracking-wide text-ink-text/50">Card title</label>
                   <input
                     id="card-title"
                     value={selected.title}
                     onChange={(event) => replaceCard({ ...selected, title: event.target.value })}
                     placeholder="Give your card a name"
                     aria-required="true"
-                    className="font-display text-2xl font-semibold bg-transparent border-b border-ink-text/15 outline-none min-w-0 py-1 placeholder:text-ink-text/25 focus:border-brass"
+                    aria-describedby="card-title-help"
+                    className="min-w-0 border-b border-ink-text/15 bg-transparent py-1 font-display text-2xl font-semibold tracking-[-0.025em] outline-none placeholder:text-ink-text/25 focus:border-brass sm:text-3xl"
                   />
-                  <p className="text-[11px] text-ink-text/40">This is the name you’ll see in Yoto.</p>
+                  <p id="card-title-help" className={`text-xs ${selected.title.trim() ? "text-ink-text/45" : "font-medium text-amber-800"}`}>
+                    {selected.title.trim() ? "Shown in your Yoto library." : "Add a title before sending this card."}
+                  </p>
                 </div>
-                <button type="button" onClick={() => deleteCard(selected)} className="font-mono text-[10px] uppercase text-ink-text/35 hover:text-red-700">Remove card</button>
+                <button type="button" onClick={() => deleteCard(selected)} className="press col-span-2 justify-self-start rounded-sm px-2 py-1 font-mono text-[10px] text-ink-text/40 hover:bg-red-700/10 hover:text-red-800 sm:col-span-1 sm:justify-self-end">Remove from browser</button>
               </div>
 
-              <form onSubmit={addTrack} className="flex flex-col gap-1.5">
-                <label htmlFor="youtube-track" className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-text/45">Add a track</label>
-                <div className={`grid grid-cols-[auto_1fr_auto] items-stretch rounded-sm border bg-ink-text/[0.04] overflow-hidden transition-colors focus-within:border-brass ${trackInputError ? "border-red-700/50" : "border-ink-text/15"}`}>
+              <form onSubmit={addTrack} className="flex flex-col gap-2 border-t border-ink-text/10 pt-5">
+                <div className="flex items-baseline justify-between gap-3">
+                  <label htmlFor="youtube-track" className="font-mono text-[10px] font-medium tracking-wide text-ink-text/50">Add a YouTube track</label>
+                  <span className="hidden text-xs text-ink-text/35 sm:inline">Link or 11-character video ID</span>
+                </div>
+                <div className={`grid grid-cols-[1fr_auto] items-stretch overflow-hidden rounded-sm border bg-white/35 transition-colors focus-within:border-brass sm:grid-cols-[auto_1fr_auto] ${trackInputError ? "border-red-700/50" : "border-ink-text/15"}`}>
                   <span className="hidden sm:flex items-center px-3 border-r border-ink-text/10 font-mono text-[10px] uppercase tracking-wider text-ink-text/35" aria-hidden="true">youtube /</span>
                   <input
                     ref={trackInputRef}
@@ -510,12 +529,12 @@ export default function BrowserLibraryPage() {
                     placeholder="Qzi2R_uuk2E or youtube.com/watch?v=…"
                     className="min-w-0 bg-transparent outline-none px-3 py-3 font-mono text-xs placeholder:text-ink-text/30 disabled:opacity-50"
                   />
-                  <button disabled={lookingUp || !extractVideoId(trackInput)} className="press bg-ink text-paper hover:bg-brass hover:text-ink-text disabled:opacity-35 px-4 font-mono text-[10px] uppercase tracking-wider">
-                    {lookingUp ? "Reading…" : "Add track"}
+                  <button disabled={lookingUp || !extractVideoId(trackInput)} className="press bg-ink px-4 font-mono text-[10px] font-medium text-paper hover:bg-brass hover:text-ink-text disabled:cursor-not-allowed disabled:opacity-35">
+                    {lookingUp ? "Reading video…" : "Add track"}
                   </button>
                 </div>
                 <p id="youtube-track-help" className={`text-[11px] ${trackInputError ? "text-red-700" : "text-ink-text/40"}`}>
-                  {trackInputError ?? "Paste a link or video ID. Press Enter to keep adding."}
+                  {trackInputError ?? "We’ll read the title, length, and thumbnail before anything is sent."}
                 </p>
               </form>
 
@@ -525,7 +544,7 @@ export default function BrowserLibraryPage() {
                     <TrackRow key={track.id} track={track} index={index} open={openIcon === track.id} onOpen={(open) => setOpenIcon(open ? track.id : undefined)} onChange={(changed) => updateTrack(selected.id, changed)} onRemove={() => removeTrack(selected.id, track.id)} activeProgress={publishing && uploadCardId === selected.id && uploadProgress?.trackIndex === index + 1 ? uploadProgress : undefined} />
                   ))}
                 </ol>
-              ) : <p className="text-sm text-ink-text/45 py-5 text-center">Add one or more YouTube links to get started. You can choose an icon for each audio track if you’d like.</p>}
+              ) : <div className="rounded-sm border border-dashed border-ink-text/15 px-5 py-8 text-center"><p className="font-display text-lg font-semibold text-ink-text/60">No tracks yet</p><p className="mt-1 text-sm text-ink-text/45">Paste a YouTube link above to build the running order.</p></div>}
 
               {uploadProgress && uploadCardId === selected.id ? (
                 <UploadDocket
@@ -536,35 +555,31 @@ export default function BrowserLibraryPage() {
               ) : null}
 
               <div className="flex flex-wrap items-center gap-3 border-t border-ink-text/10 pt-5">
-                <button type="button" onClick={publish} disabled={publishing || !cardTitleReady || selected.tracks.length === 0} className="press bg-brass text-ink-text disabled:opacity-40 rounded-sm px-5 py-3 font-mono text-xs uppercase tracking-wider font-medium">
-                  {publishing ? <LoadingDots label="Routing to Yoto" className="text-ink-text" /> : selected.yotoCardId ? "Update on Yoto" : "Send to Yoto"}
+                <button type="button" onClick={() => void publish()} disabled={publishing || !cardTitleReady || selected.tracks.length === 0 || (Boolean(selected.yotoCardId) && !hasUnpublishedChanges)} className="press rounded-sm bg-brass px-5 py-3 font-mono text-xs font-medium text-ink-text shadow-sm hover:bg-signal disabled:cursor-not-allowed disabled:opacity-40">
+                  {publishing ? <LoadingDots label="Sending card" className="text-ink-text" /> : selected.yotoCardId ? hasUnpublishedChanges ? "Update Yoto card" : "Yoto card is up to date" : "Send card to Yoto"}
                 </button>
                 {selected.yotoCardId ? (
                   <>
-                    <a href={`https://my.yotoplay.com/card/${selected.yotoCardId}/edit`} target="_blank" rel="noreferrer" className="stage-stamp font-mono text-[10px] uppercase tracking-wider text-ink-text">Filed · open ↗</a>
+                    <a href={`https://my.yotoplay.com/card/${selected.yotoCardId}/edit`} target="_blank" rel="noreferrer" className="stage-stamp font-mono text-[10px] font-medium text-ink-text">Open in Yoto ↗</a>
                     <button
                       type="button"
                       disabled={publishing}
-                      onClick={() => {
-                        replaceCard({ ...selected, yotoCardId: undefined });
-                        setUploadProgress(undefined);
-                        setUploadCardId(undefined);
-                        setNotice("The old Yoto link is cleared. Send to Yoto to create a replacement with this name.");
-                      }}
-                      className="press font-mono text-[9px] uppercase tracking-wider text-ink-text/35 hover:text-red-700 disabled:opacity-40"
+                      onClick={() => void publish({ asCopy: true })}
+                      className="press rounded-sm px-2 py-1 font-mono text-[10px] text-ink-text/45 hover:bg-ink-text/5 hover:text-ink-text disabled:opacity-40"
                     >
-                      Card deleted? Create replacement
+                      Create a separate copy
                     </button>
                   </>
                 ) : null}
-                {notice ? <p className="text-xs text-ink-text/60">{notice}</p> : null}
+                {notice ? <p role="status" className="basis-full text-sm text-ink-text/65 sm:basis-auto">{notice}</p> : null}
               </div>
             </div>
           </section>
         ) : (
-          <section className="border border-dashed border-paper/20 rounded-sm p-12 text-center">
-            <p className="font-display text-2xl text-paper/70">Make your first card.</p>
-            <button onClick={createCard} className="press mt-4 text-brass font-mono text-xs uppercase tracking-wider">Create the first card →</button>
+          <section className="rounded-md border border-dashed border-paper/20 bg-ink-panel/50 p-10 text-center sm:p-16">
+            <p className="font-display text-2xl font-semibold text-paper/85">Start with an empty card</p>
+            <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-paper/50">Add YouTube tracks, choose a cover and icons, then send the finished card to Yoto.</p>
+            <button onClick={createCard} className="press mt-5 rounded-sm bg-brass px-5 py-3 font-mono text-xs font-medium text-ink-text hover:bg-signal">Create a card</button>
           </section>
         )}
       </div>

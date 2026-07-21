@@ -69,6 +69,28 @@ describe("Yoto card publisher", () => {
     expect(submittedBodies[1]).not.toHaveProperty("cardId");
   });
 
+  it("updates an existing card by submitting its stored card ID once", async () => {
+    const submittedBodies: { cardId?: string; title: string }[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "https://www.yotoicons.com/static/uploads/42.png") return new Response(new Uint8Array([1]));
+      if (url.endsWith("/media/displayIcons/user/me/upload")) {
+        return new Response(JSON.stringify({ displayIcon: { mediaId: "icon-media" } }));
+      }
+      if (url.endsWith("/content")) {
+        submittedBodies.push(JSON.parse(init?.body as string));
+        return new Response(JSON.stringify({ card: { cardId: "existing-card" } }));
+      }
+      throw new Error(`Unexpected fetch ${url}`);
+    }));
+
+    await expect(publishCard("token", "Updated name", [track], "existing-card")).resolves.toEqual({
+      cardId: "existing-card",
+      replacedDeletedCard: false,
+    });
+    expect(submittedBodies).toEqual([{ cardId: "existing-card", title: "Updated name", content: expect.any(Object) }]);
+  });
+
   it("uploads a trusted YouTube thumbnail and attaches it as the card cover", async () => {
     const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);

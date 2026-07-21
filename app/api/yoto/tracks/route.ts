@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { isSameOrigin } from "@/lib/route-safety";
+import { rateLimit } from "@/lib/rate-limit";
 import { probeTrackSource, readTrackTranscode, uploadTrack, type TrackSource } from "@/lib/track-ingest";
 import { normalizeYoutubeInput } from "@/lib/validate";
 import { routeYotoAccessToken } from "@/lib/yoto-route-session";
@@ -27,6 +28,8 @@ export async function POST(request: NextRequest) {
   const url = typeof body.url === "string" ? normalizeYoutubeInput(body.url) : undefined;
   if (!url) return Response.json({ error: "Enter a valid YouTube URL or video ID" }, { status: 400 });
   if (body.action === "status") {
+    const limited = rateLimit(request, { scope: "yoto-track-status", limit: 120, windowMs: 60_000 });
+    if (limited) return limited;
     if (
       typeof body.uploadId !== "string"
       || body.uploadId.length > 200
@@ -49,6 +52,8 @@ export async function POST(request: NextRequest) {
       );
     }
   }
+  const limited = rateLimit(request, { scope: "yoto-track-upload", limit: 30, windowMs: 60_000 });
+  if (limited) return limited;
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {

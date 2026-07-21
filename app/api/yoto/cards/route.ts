@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { isSameOrigin } from "@/lib/route-safety";
+import { rateLimit } from "@/lib/rate-limit";
 import { routeYotoAccessToken } from "@/lib/yoto-route-session";
 import { publishCard, type PublishTrack } from "@/lib/yoto-publisher";
 
@@ -7,6 +8,8 @@ export const maxDuration = 60;
 
 export async function POST(request: NextRequest) {
   if (!isSameOrigin(request)) return Response.json({ error: "Cross-site request rejected" }, { status: 403 });
+  const limited = rateLimit(request, { scope: "yoto-card-publish", limit: 10, windowMs: 60_000 });
+  if (limited) return limited;
   const body = await request.json().catch(() => ({})) as {
     title?: unknown;
     tracks?: unknown;

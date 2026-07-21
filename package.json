@@ -12,7 +12,7 @@
     "test": "vitest run"
   },
   "engines": {
-    "node": ">=22"
+    "node": "24.x"
   },
   "dependencies": {
     "execa": "^9.6.1",

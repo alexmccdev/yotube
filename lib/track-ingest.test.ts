@@ -52,7 +52,9 @@ describe("track ingest", () => {
     const progress: string[] = [];
     const source = await probeTrackSource("https://youtu.be/abc");
     expect(execaMock.mock.calls[0]?.[0]).toBe("yt-dlp");
+    expect(execaMock.mock.calls[0]?.[1]).toContain("node");
     await expect(uploadTrack("token", source, undefined, (event) => progress.push(event.phase))).resolves.toBe("up-1");
+    expect(execaMock.mock.calls[1]?.[1]).toContain("node");
     await expect(readTrackTranscode("token", "up-1", source, undefined, (event) => progress.push(event.phase))).resolves.toMatchObject({
       title: "Me at the zoo",
       sha256: "sha-1",
@@ -65,6 +67,17 @@ describe("track ingest", () => {
   it("rejects sources whose exact selected filesize is unavailable", async () => {
     execaMock.mockResolvedValueOnce({ stdout: JSON.stringify({ title: "Unknown", duration: 10 }) } as never);
     await expect(probeTrackSource("https://youtu.be/abc")).rejects.toThrow("exact M4A size");
+  });
+
+  it("does not expose subprocess details when YouTube blocks the server", async () => {
+    execaMock.mockRejectedValueOnce(Object.assign(
+      new Error("Command failed: /var/task/vendor/yt-dlp --dump-json https://youtube.example/private"),
+      { stderr: "ERROR: Sign in to confirm you’re not a bot" },
+    ));
+
+    const result = probeTrackSource("https://youtu.be/abc");
+    await expect(result).rejects.toThrow("YouTube temporarily blocked this server request");
+    await expect(result).rejects.not.toThrow("/var/task/vendor/yt-dlp");
   });
 
   it("reports an upload as pending while Yoto is still transcoding", async () => {

@@ -5,6 +5,7 @@ import { execa } from "execa";
 
 const API_BASE = "https://api.yotoplay.com";
 const FORMAT = "bestaudio[ext=m4a]";
+const YT_DLP_COMMON_ARGS = ["--no-playlist", "--no-cache-dir", "--js-runtimes", "node"];
 // Leave enough time for the route to serialize an error before Vercel Hobby's
 // 60-second function limit is reached.
 const TRANSFER_TIMEOUT_MS = 50_000;
@@ -49,6 +50,13 @@ export type TrackIngestProgressHandler = (progress: TrackIngestProgress) => void
 function safeMessage(error: unknown): string {
   if (error instanceof ProcessError) return error.message;
   if (error instanceof Error && error.name === "AbortError") return "The upload was cancelled";
+  const stderr = typeof error === "object" && error && "stderr" in error && typeof error.stderr === "string"
+    ? error.stderr
+    : undefined;
+  if (stderr?.includes("Sign in to confirm you’re not a bot")) {
+    return "YouTube temporarily blocked this server request. Try again shortly or choose another video.";
+  }
+  if (stderr) return "YouTube could not read this video";
   return error instanceof Error ? error.message : String(error);
 }
 
@@ -71,7 +79,7 @@ export async function probeTrackSource(url: string, signal?: AbortSignal): Promi
   try {
     const { stdout } = await execa(
       await ytDlpBinary(),
-      ["--dump-json", "--no-playlist", "--no-cache-dir", "-f", FORMAT, url],
+      ["--dump-json", ...YT_DLP_COMMON_ARGS, "-f", FORMAT, url],
       { timeout: 30_000, cancelSignal: signal },
     );
     const data = JSON.parse(stdout) as {
@@ -159,7 +167,7 @@ export async function uploadTrack(
   const { uploadId, uploadUrl } = await requestUploadUrl(accessToken, combinedSignal);
   const subprocess = execa(
     await ytDlpBinary(),
-    ["--no-cache-dir", "--no-playlist", "-f", FORMAT, "-o", "-", source.url],
+    [...YT_DLP_COMMON_ARGS, "-f", FORMAT, "-o", "-", source.url],
     {
       stdout: "pipe",
       stderr: "pipe",

@@ -60,7 +60,7 @@ export default function UploadDocket({
   const active = !["complete", "error", "cancelled"].includes(progress.phase);
   return (
     <section aria-live="polite" aria-label="Upload progress" className="pop-in border border-ink-text/15 bg-ink-text/[0.04] rounded-sm overflow-hidden">
-      <div className="grid grid-cols-[auto_1fr_auto] gap-x-4 gap-y-2 items-center p-4 sm:p-5">
+      <div className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-2 p-4 sm:grid-cols-[auto_1fr_auto] sm:gap-x-4 sm:p-5">
         <div className="font-display text-3xl sm:text-4xl font-semibold tabular-nums leading-none text-brass">
           {Math.round(progress.overallPercent)}<span className="text-base">%</span>
         </div>
@@ -71,11 +71,11 @@ export default function UploadDocket({
           <h3 className="font-display text-lg font-semibold leading-tight">{heading}</h3>
           <p className="text-xs text-ink-text/50 truncate">{progress.trackTitle ?? detail}</p>
         </div>
-        <div className="text-right font-mono text-[10px] uppercase tracking-wider text-ink-text/40 tabular-nums">
+        <div className="col-span-2 flex justify-between font-mono text-[10px] uppercase tracking-wider text-ink-text/40 tabular-nums sm:col-span-1 sm:block sm:text-right">
           <span className="block">Elapsed</span>
           <span className="text-ink-text/70">{formatElapsed(elapsedMs)}</span>
         </div>
-        <div className="col-span-3 h-2 bg-ink-text/10 rounded-full overflow-hidden" role="progressbar" aria-label="Overall card progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress.overallPercent)}>
+        <div className="col-span-2 h-2 overflow-hidden rounded-full bg-ink-text/10 sm:col-span-3" role="progressbar" aria-label="Overall card progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress.overallPercent)}>
           <div className="h-full bg-brass transition-[width] duration-300 ease-out" style={{ width: `${progress.overallPercent}%` }} />
         </div>
       </div>
@@ -95,7 +95,7 @@ export default function UploadDocket({
         ) : null}
         <span className="normal-case tracking-normal text-ink-text/45">{detail}</span>
         {active && onCancel ? (
-          <button type="button" onClick={onCancel} className="press ml-auto uppercase tracking-wider text-ink-text/45 hover:text-red-700">Stop</button>
+          <button type="button" onClick={onCancel} className="press ml-auto min-h-11 px-2 uppercase tracking-wider text-ink-text/45 hover:text-red-700 sm:min-h-0">Stop</button>
         ) : null}
       </div>
     </section>

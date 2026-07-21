@@ -23,22 +23,22 @@ export default function YotoOnboarding() {
       aria-labelledby="connect-yoto-title"
       className="file-in overflow-hidden rounded-md border border-signal/20 border-t-4 border-t-signal bg-ink-panel shadow-xl shadow-black/20"
     >
-      <div className="grid gap-6 p-5 lg:grid-cols-[1.08fr_0.92fr] lg:items-start sm:p-7">
-        <div className="max-w-xl">
+      <div className="grid gap-5 p-4 sm:p-7 lg:grid-cols-[1.08fr_0.92fr] lg:items-start">
+        <div className="min-w-0 max-w-xl">
           <p className="font-mono text-[10px] font-medium tracking-[0.16em] text-signal">
             One-time setup
           </p>
-          <h2 id="connect-yoto-title" className="mt-1 font-display text-2xl font-semibold tracking-[-0.025em] text-paper sm:text-3xl">
+          <h2 id="connect-yoto-title" className="mt-1 font-display text-[1.65rem] font-semibold leading-tight tracking-[-0.025em] text-paper sm:text-3xl">
             Connect Yoto once
           </h2>
-          <p className="mt-2 max-w-lg text-base leading-relaxed text-paper/75">
+          <p className="mt-2 max-w-lg text-sm leading-relaxed text-paper/75 sm:text-base">
             Yoto needs a developer app so this browser can send finished cards to your library. Your Client ID is not a password.
           </p>
 
-          <ol className="mt-5 flex flex-col gap-4" aria-label="Yoto connection steps">
+          <ol className="mt-4 flex flex-col gap-3 sm:mt-5 sm:gap-4" aria-label="Yoto connection steps">
             <li className="flex gap-3 border-l border-paper/15 pl-3">
               <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-signal/40 font-mono text-xs font-semibold text-signal">1</span>
-              <div>
+              <div className="min-w-0 flex-1">
                 <h3 className="font-semibold text-paper">Create a Yoto developer app</h3>
                 <p className="mt-0.5 text-sm leading-relaxed text-paper/70">
                   Open the{" "}
@@ -65,7 +65,7 @@ export default function YotoOnboarding() {
                       setCopied(true);
                       window.setTimeout(() => setCopied(false), 1500);
                     }}
-                    className="press shrink-0 rounded-sm border border-signal/40 px-2 py-1.5 font-mono text-[10px] text-signal hover:border-signal hover:text-paper"
+                    className="press min-h-10 shrink-0 rounded-sm border border-signal/40 px-3 py-1.5 font-mono text-[10px] text-signal hover:border-signal hover:text-paper"
                   >
                     {copied ? "Copied" : "Copy"}
                   </button>
@@ -76,7 +76,7 @@ export default function YotoOnboarding() {
         </div>
 
         <form
-          className="rounded-sm border border-paper/15 bg-black/10 p-5"
+          className="rounded-sm border border-paper/15 bg-black/10 p-4 sm:p-5"
           onSubmit={(event) => {
             event.preventDefault();
             void connect(clientId);
@@ -97,7 +97,7 @@ export default function YotoOnboarding() {
                 spellCheck={false}
                 placeholder="Client ID"
                 onChange={(event) => setClientId(storeYotoClientId(event.target.value))}
-                className="mt-2 w-full rounded-sm border border-paper/20 bg-ink px-3 py-2.5 font-mono text-sm text-paper outline-none transition-colors placeholder:text-paper/25 focus:border-brass"
+                className="mt-2 min-h-12 w-full rounded-sm border border-paper/20 bg-ink px-3 py-2.5 font-mono text-sm text-paper outline-none transition-colors placeholder:text-paper/25 focus:border-brass"
               />
               <p className="mt-2 text-xs leading-relaxed text-paper/55">
                 Stored in this browser and encrypted with your Yoto session cookie.
@@ -107,7 +107,7 @@ export default function YotoOnboarding() {
           <button
             type="submit"
             disabled={connecting || !clientIdReady}
-            className="press mt-4 w-full rounded-sm bg-brass px-5 py-3 font-mono text-xs font-medium text-ink-text transition-colors hover:bg-signal disabled:cursor-not-allowed disabled:opacity-40"
+            className="press mt-4 min-h-12 w-full rounded-sm bg-brass px-5 py-3 font-mono text-xs font-medium text-ink-text transition-colors hover:bg-signal disabled:cursor-not-allowed disabled:opacity-40"
           >
             {connecting ? <LoadingDots label="Waiting for Yoto" /> : "Continue with Yoto"}
           </button>

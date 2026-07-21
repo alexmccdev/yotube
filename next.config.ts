@@ -17,6 +17,9 @@ const contentSecurityPolicy = `
 `.replace(/\s{2,}/g, " ").trim();
 
 const nextConfig: NextConfig = {
+  turbopack: {
+    root: process.cwd(),
+  },
   outputFileTracingIncludes: {
     "/api/yoto/tracks": ["./vendor/yt-dlp"],
     "/api/youtube/metadata": ["./vendor/yt-dlp"],

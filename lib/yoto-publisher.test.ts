@@ -145,4 +145,16 @@ describe("Yoto card publisher", () => {
     await expect(publishCard("token", "My card", [{ ...track, icon: { source: "yotoicons", id: "../secret", url: "https://evil.example" } }])).rejects.toThrow("Invalid community icon");
     expect(fetch).not.toHaveBeenCalled();
   });
+
+  it("rejects an oversized image from its headers before buffering it", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
+      if (String(input) === "https://www.yotoicons.com/static/uploads/42.png") {
+        return new Response(new Uint8Array([1]), { headers: { "Content-Length": "1000001" } });
+      }
+      throw new Error(`Unexpected fetch ${String(input)}`);
+    }));
+
+    await expect(publishCard("token", "My card", [track])).rejects.toThrow("selected icon is too large");
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
 });

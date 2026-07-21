@@ -3,6 +3,39 @@ import type { IngestedTrack } from "./track-ingest";
 
 const API_BASE = "https://api.yotoplay.com";
 const YOUTUBE_THUMBNAIL_HOSTS = new Set(["i.ytimg.com", "img.youtube.com"]);
+const IMAGE_DOWNLOAD_TIMEOUT_MS = 10_000;
+
+async function readBoundedImage(response: Response, maximumBytes: number, tooLargeMessage: string): Promise<ArrayBuffer> {
+  const declaredLength = Number(response.headers.get("content-length"));
+  if (Number.isFinite(declaredLength) && declaredLength > maximumBytes) throw new Error(tooLargeMessage);
+  if (!response.body) throw new Error("The selected image was empty");
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let byteLength = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      byteLength += value.byteLength;
+      if (byteLength > maximumBytes) {
+        await reader.cancel();
+        throw new Error(tooLargeMessage);
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const bytes = new Uint8Array(byteLength);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes.buffer;
+}
 
 export type TrackIconSelection =
   | { source: "yoto-library"; mediaId: string; url: string }
@@ -57,10 +90,10 @@ async function materializeIcon(accessToken: string, icon?: TrackIconSelection) {
   if (icon.source === "yoto-library") return icon.mediaId;
   const image = await fetch(trustedYotoIconsUrl(icon), {
     headers: { "User-Agent": "Mozilla/5.0 (compatible; yotube/1.0)" },
+    signal: AbortSignal.timeout(IMAGE_DOWNLOAD_TIMEOUT_MS),
   });
   if (!image.ok) throw new Error("The selected community icon is no longer available");
-  const bytes = await image.arrayBuffer();
-  if (bytes.byteLength > 1_000_000) throw new Error("The selected icon is too large");
+  const bytes = await readBoundedImage(image, 1_000_000, "The selected icon is too large");
   const response = await fetch(`${API_BASE}/media/displayIcons/user/me/upload`, {
     method: "POST",
     headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "image/png" },
@@ -83,12 +116,12 @@ async function materializeCover(accessToken: string, coverImageUrl?: string) {
   if (!coverImageUrl) return undefined;
   const image = await fetch(trustedThumbnailUrl(coverImageUrl), {
     headers: { "User-Agent": "Mozilla/5.0 (compatible; yotube/1.0)" },
+    signal: AbortSignal.timeout(IMAGE_DOWNLOAD_TIMEOUT_MS),
   });
   if (!image.ok) throw new Error("The selected card image is no longer available");
-  const bytes = await image.arrayBuffer();
-  if (bytes.byteLength > 10_000_000) throw new Error("The selected card image is too large");
   const contentType = image.headers.get("content-type") ?? "image/jpeg";
   if (!contentType.startsWith("image/")) throw new Error("The selected card image is not an image");
+  const bytes = await readBoundedImage(image, 10_000_000, "The selected card image is too large");
   const response = await fetch(
     `${API_BASE}/media/coverImage/user/me/upload?autoconvert=true&coverType=default`,
     {

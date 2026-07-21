@@ -91,9 +91,41 @@ async function waitForYotoTrack(
 
 async function streamTrackToYoto(
   track: BrowserTrack,
+  cookieBrowser: DesktopCookieBrowser,
   signal: AbortSignal,
   onProgress: (progress: TrackStreamEvent & { type: "progress" }) => void,
 ): Promise<IngestedTrack> {
+  const desktop = window.yotubeDesktop;
+  if (desktop) {
+    const operationId = crypto.randomUUID();
+    const unsubscribe = desktop.onUploadProgress((progress) => {
+      if (progress.operationId !== operationId) return;
+      onProgress({
+        type: "progress",
+        progress: {
+          phase: "streaming",
+          bytesTransferred: progress.bytesTransferred,
+          totalBytes: progress.totalBytes,
+          transferPercent: progress.transferPercent,
+        },
+      });
+    });
+    const cancel = () => void desktop.cancelUpload(operationId);
+    signal.addEventListener("abort", cancel, { once: true });
+    try {
+      onProgress({ type: "progress", progress: { phase: "opening", totalBytes: track.source.fileSize } });
+      const result = await desktop.uploadYoutube({
+        operationId,
+        source: track.source,
+        browser: cookieBrowser,
+      });
+      return waitForYotoTrack(track, result.uploadId, signal, onProgress);
+    } finally {
+      signal.removeEventListener("abort", cancel);
+      unsubscribe();
+    }
+  }
+
   const response = await fetch("/api/yoto/tracks", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -199,6 +231,8 @@ export default function BrowserLibraryPage() {
   const [trackInput, setTrackInput] = useState("");
   const [trackInputError, setTrackInputError] = useState<string>();
   const [lookingUp, setLookingUp] = useState(false);
+  const [desktopAvailable, setDesktopAvailable] = useState(false);
+  const [cookieBrowser, setCookieBrowser] = useState<DesktopCookieBrowser>("none");
   const [publishing, setPublishing] = useState(false);
   const [notice, setNotice] = useState<string>();
   const [openIcon, setOpenIcon] = useState<string>();
@@ -214,6 +248,7 @@ export default function BrowserLibraryPage() {
       const stored = loadCatalog(window.localStorage);
       setCards(stored);
       setSelectedId(stored[0]?.id);
+      setDesktopAvailable(Boolean(window.yotubeDesktop));
       setReady(true);
     });
     return () => cancelAnimationFrame(frame);
@@ -260,7 +295,7 @@ export default function BrowserLibraryPage() {
   };
   const deleteCard = (card: BrowserCard) => {
     const name = card.title.trim() ? `“${card.title.trim()}”` : "this untitled card";
-    if (!window.confirm(`Remove ${name} from this browser? This won’t delete anything already on Yoto.`)) return;
+    if (!window.confirm(`Remove ${name} from this ${desktopAvailable ? "device" : "browser"}? This won’t delete anything already on Yoto.`)) return;
     const remaining = cards.filter((item) => item.id !== card.id);
     setCards(remaining);
     setSelectedId(remaining[0]?.id);
@@ -282,11 +317,13 @@ export default function BrowserLibraryPage() {
     setTrackInputError(undefined);
     setNotice(undefined);
     try {
-      const source = await jsonRequest<BrowserTrack["source"]>("/api/youtube/metadata", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: videoId }),
-      });
+      const source = window.yotubeDesktop
+        ? await window.yotubeDesktop.probeYoutube({ url: videoId, browser: cookieBrowser })
+        : await jsonRequest<BrowserTrack["source"]>("/api/youtube/metadata", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: videoId }),
+        });
       const trackId = crypto.randomUUID();
       const inferCover = !selected.coverImageUrl && Boolean(source.thumbnail);
       replaceCard({
@@ -337,7 +374,7 @@ export default function BrowserLibraryPage() {
         next = { ...next, tracks: next.tracks.map((item) => item.id === track.id ? { ...item, state: "uploading", error: undefined } : item) };
         replaceCard(next);
         try {
-          const ingested = await streamTrackToYoto(track, controller.signal, (event) => {
+          const ingested = await streamTrackToYoto(track, cookieBrowser, controller.signal, (event) => {
             const progress = event.progress;
             const phaseFraction = progress.phase === "streaming"
               ? 0.08 + ((progress.transferPercent ?? 0) / 100) * 0.72
@@ -416,7 +453,8 @@ export default function BrowserLibraryPage() {
             <span>YouTube audio</span><span className="col-start-3">Yoto cards</span>
           </div>
           <h1 className="mt-2 font-display text-[2.5rem] font-semibold leading-none tracking-[-0.045em] sm:text-5xl">yotube</h1>
-          <p className="col-span-2 mt-2 max-w-xl text-sm leading-relaxed text-paper/65 sm:text-base">Build a card in your browser, then send each track straight to your Yoto library.</p>
+          <p className="mt-2 max-w-xl text-sm leading-relaxed text-paper/65 sm:text-base">Build a card, then send each track straight to your Yoto library.</p>
+          {desktopAvailable ? <p className="mt-2 font-mono text-[10px] font-medium tracking-wide text-signal">● Local downloader active</p> : null}
         </div>
         <YotoConnectStatus />
       </header>
@@ -442,7 +480,7 @@ export default function BrowserLibraryPage() {
             </button>
           ))}
           </div>
-          <p className="mt-1 text-[11px] leading-relaxed text-paper/45 sm:mt-2 sm:text-xs">Saved only in this browser. Removing a draft here never deletes a card from Yoto.</p>
+          <p className="mt-1 text-[11px] leading-relaxed text-paper/45 sm:mt-2 sm:text-xs">Saved only on this {desktopAvailable ? "device" : "browser"}. Removing a draft here never deletes a card from Yoto.</p>
         </aside>
 
         {selected ? (
@@ -495,7 +533,7 @@ export default function BrowserLibraryPage() {
                     {selected.title.trim() ? "Shown in your Yoto library." : "Add a title before sending this card."}
                   </p>
                 </div>
-                <button type="button" onClick={() => deleteCard(selected)} className="press col-span-2 min-h-11 justify-self-start rounded-sm px-2 py-1 font-mono text-[10px] text-ink-text/40 hover:bg-red-700/10 hover:text-red-800 sm:col-span-1 sm:min-h-0 sm:justify-self-end">Remove from browser</button>
+                <button type="button" onClick={() => deleteCard(selected)} className="press col-span-2 min-h-11 justify-self-start rounded-sm px-2 py-1 font-mono text-[10px] text-ink-text/40 hover:bg-red-700/10 hover:text-red-800 sm:col-span-1 sm:min-h-0 sm:justify-self-end">Remove from {desktopAvailable ? "device" : "browser"}</button>
               </div>
 
               <form onSubmit={addTrack} className="flex flex-col gap-2 border-t border-ink-text/10 pt-5">
@@ -542,6 +580,31 @@ export default function BrowserLibraryPage() {
                   {trackInputError ?? "We’ll read the title, length, and thumbnail before anything is sent."}
                 </p>
               </form>
+
+              {desktopAvailable ? (
+                <div className="flex flex-col gap-2 rounded-sm border border-emerald-900/15 bg-emerald-950/[0.04] px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="font-mono text-[10px] font-medium tracking-wide text-emerald-900">Desktop privacy</p>
+                    <p className="mt-1 text-[11px] leading-relaxed text-ink-text/50">YouTube runs on this computer. Browser cookies stay local and are used only if you choose a signed-in browser.</p>
+                  </div>
+                  <label className="flex shrink-0 items-center gap-2 font-mono text-[10px] text-ink-text/55">
+                    YouTube sign-in
+                    <select
+                      value={cookieBrowser}
+                      onChange={(event) => setCookieBrowser(event.target.value as DesktopCookieBrowser)}
+                      disabled={publishing || lookingUp}
+                      className="rounded-sm border border-ink-text/15 bg-paper px-2 py-1.5 text-ink-text outline-none focus:border-brass disabled:opacity-50"
+                    >
+                      <option value="none">Not needed</option>
+                      <option value="chrome">Chrome</option>
+                      <option value="safari">Safari</option>
+                      <option value="firefox">Firefox</option>
+                      <option value="edge">Edge</option>
+                      <option value="brave">Brave</option>
+                    </select>
+                  </label>
+                </div>
+              ) : null}
 
               {selected.tracks.length ? (
                 <ol>

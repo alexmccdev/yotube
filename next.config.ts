@@ -20,6 +20,7 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: process.cwd(),
   },
+  output: process.env.YOTUBE_DESKTOP_BUILD === "1" ? "standalone" : undefined,
   outputFileTracingIncludes: {
     "/api/yoto/tracks": ["./vendor/yt-dlp"],
     "/api/youtube/metadata": ["./vendor/yt-dlp"],

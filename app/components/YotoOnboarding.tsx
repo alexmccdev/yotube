@@ -32,7 +32,7 @@ export default function YotoOnboarding() {
             Connect Yoto once
           </h2>
           <p className="mt-2 max-w-lg text-sm leading-relaxed text-paper/75 sm:text-base">
-            Yoto needs a developer app so this browser can send finished cards to your library. Your Client ID is not a password.
+            Yoto needs a developer app so Yotube can send finished cards to your library. Your Client ID is not a password.
           </p>
 
           <ol className="mt-4 flex flex-col gap-3 sm:mt-5 sm:gap-4" aria-label="Yoto connection steps">
@@ -100,7 +100,7 @@ export default function YotoOnboarding() {
                 className="mt-2 min-h-12 w-full rounded-sm border border-paper/20 bg-ink px-3 py-2.5 font-mono text-sm text-paper outline-none transition-colors placeholder:text-paper/25 focus:border-brass"
               />
               <p className="mt-2 text-xs leading-relaxed text-paper/55">
-                Stored in this browser and encrypted with your Yoto session cookie.
+                Stored only on this device and encrypted with your Yoto session cookie.
               </p>
             </div>
           </div>

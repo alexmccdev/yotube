@@ -105,7 +105,7 @@ export async function probeTrackSource(url: string, signal?: AbortSignal): Promi
   }
 }
 
-async function requestUploadUrl(accessToken: string, signal?: AbortSignal) {
+export async function requestTrackUploadUrl(accessToken: string, signal?: AbortSignal) {
   const response = await fetch(`${API_BASE}/media/transcode/audio/uploadUrl`, {
     headers: { Authorization: `Bearer ${accessToken}` },
     signal,
@@ -164,7 +164,7 @@ export async function uploadTrack(
   const deadline = AbortSignal.timeout(TRANSFER_TIMEOUT_MS);
   const combinedSignal = signal ? AbortSignal.any([signal, deadline]) : deadline;
   onProgress?.({ phase: "opening", totalBytes: source.fileSize });
-  const { uploadId, uploadUrl } = await requestUploadUrl(accessToken, combinedSignal);
+  const { uploadId, uploadUrl } = await requestTrackUploadUrl(accessToken, combinedSignal);
   const subprocess = execa(
     await ytDlpBinary(),
     [...YT_DLP_COMMON_ARGS, "-f", FORMAT, "-o", "-", source.url],

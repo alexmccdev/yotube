@@ -1,7 +1,13 @@
 import { NextRequest } from "next/server";
 import { isSameOrigin } from "@/lib/route-safety";
 import { rateLimit } from "@/lib/rate-limit";
-import { probeTrackSource, readTrackTranscode, uploadTrack, type TrackSource } from "@/lib/track-ingest";
+import {
+  probeTrackSource,
+  readTrackTranscode,
+  requestTrackUploadUrl,
+  uploadTrack,
+  type TrackSource,
+} from "@/lib/track-ingest";
 import { normalizeYoutubeInput } from "@/lib/validate";
 import { routeYotoAccessToken } from "@/lib/yoto-route-session";
 
@@ -54,6 +60,23 @@ export async function POST(request: NextRequest) {
   }
   const limited = rateLimit(request, { scope: "yoto-track-upload", limit: 30, windowMs: 60_000 });
   if (limited) return limited;
+  if (body.action === "desktop-upload") {
+    if (!isTrackSource(body.source) || body.source.url !== url) {
+      return Response.json({ error: "The desktop upload source is invalid" }, { status: 400 });
+    }
+    try {
+      const accessToken = await routeYotoAccessToken(request);
+      const upload = await requestTrackUploadUrl(accessToken, request.signal);
+      return Response.json(upload, {
+        headers: { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" },
+      });
+    } catch (error) {
+      return Response.json(
+        { error: error instanceof Error ? error.message : "Desktop upload could not start" },
+        { status: 500 },
+      );
+    }
+  }
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {

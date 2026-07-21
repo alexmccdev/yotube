@@ -51,6 +51,7 @@ describe("track ingest", () => {
 
     const progress: string[] = [];
     const source = await probeTrackSource("https://youtu.be/abc");
+    expect(execaMock.mock.calls[0]?.[0]).toBe("yt-dlp");
     await expect(uploadTrack("token", source, undefined, (event) => progress.push(event.phase))).resolves.toBe("up-1");
     await expect(readTrackTranscode("token", "up-1", source, undefined, (event) => progress.push(event.phase))).resolves.toMatchObject({
       title: "Me at the zoo",

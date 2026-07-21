@@ -55,13 +55,16 @@ function safeMessage(error: unknown): string {
 async function ytDlpBinary(): Promise<string> {
   const configured = process.env.YT_DLP_PATH;
   if (configured) return configured;
-  const bundled = path.join(process.cwd(), "vendor", "yt-dlp");
-  try {
-    await access(bundled, constants.X_OK);
-    return bundled;
-  } catch {
-    return "yt-dlp";
+  if (process.env.VERCEL) {
+    const bundled = path.join(process.cwd(), "vendor", "yt-dlp");
+    try {
+      await access(bundled, constants.X_OK);
+      return bundled;
+    } catch {
+      throw new Error("The bundled yt-dlp executable is missing from this deployment");
+    }
   }
+  return "yt-dlp";
 }
 
 export async function probeTrackSource(url: string, signal?: AbortSignal): Promise<TrackSource> {
